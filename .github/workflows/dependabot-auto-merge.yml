@@ -23,7 +23,7 @@ jobs:
     timeout-minutes: 5
     steps:
       # No checkout, artifact download, cache restore or execution of PR code.
-      - uses: actions/github-script@v8
+      - uses: actions/github-script@v9
         with:
           script: |
             const {owner, repo} = context.repo;
