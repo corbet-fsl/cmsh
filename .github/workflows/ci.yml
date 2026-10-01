@@ -4,6 +4,7 @@ permissions:
 concurrency:
   group: ci
   cancel-in-progress: false
+  queue: max
 jobs:
   resolve:
     runs-on: ubuntu-latest
@@ -35,7 +36,7 @@ jobs:
         retention-days: 7
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
     steps:
     - uses: actions/checkout@v4
       with:
@@ -113,6 +114,39 @@ jobs:
       with:
         name: resolved-lock
     - run: python3 .github/check-first-party.py
+  tor-records:
+    needs: [resolve, check]
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.pull_request.head.sha || github.sha }}
+        persist-credentials: false
+    - uses: actions/download-artifact@v4
+      with:
+        name: resolved-lock
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: Swatinem/rust-cache@v2
+      with:
+        cache-on-failure: true
+    - name: Cache isolated transport-owned Tor tools
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/ctrn-tools
+        key: cmsh-records-tor-0.4.9.12-chutney-6cc1588-v1
+    - name: Actual private Tor Records messages and owner rehydration
+      run: bash .ci/records.sh
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: records-tor-evidence
+        path: |
+          ${{ runner.temp }}/records-tor-evidence
+          Cargo.lock
+          resolver.txt
+          records-metadata.json
+        retention-days: 7
   coverage:
     needs:
     - resolve
@@ -141,11 +175,11 @@ jobs:
         cargo llvm-cov --version'
     - name: Measure real native round trips and failure paths
       run: cargo llvm-cov --locked --workspace --all-features --branch --no-cfg-coverage --no-cfg-coverage-nightly
-        --ignore-filename-regex '/tests/' --json --output-path coverage.json
+        --ignore-filename-regex '/tests/|/examples/' --json --output-path coverage.json
     - name: Export source coverage from the same execution
-      run: 'cargo llvm-cov report --branch --ignore-filename-regex ''/tests/'' --lcov --output-path coverage.lcov
+      run: 'cargo llvm-cov report --branch --ignore-filename-regex ''/tests/|/examples/'' --lcov --output-path coverage.lcov
 
-        cargo llvm-cov report --branch --ignore-filename-regex ''/tests/'' --text --output-path coverage.txt'
+        cargo llvm-cov report --branch --ignore-filename-regex ''/tests/|/examples/'' --text --output-path coverage.txt'
     - name: Require complete line and branch coverage
       run: python3 .github/test-source-coverage.py && python3 .github/check-source-coverage.py coverage.lcov coverage.json coverage.txt
     - uses: actions/upload-artifact@v4

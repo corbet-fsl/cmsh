@@ -30,6 +30,15 @@ tokio-util = { version = "0.7", features = ["compat"] }
 wasm-bindgen-test = "0.3"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+cdht = { git = "https://github.com/corbet-foss/cdht", branch = "main" }
+ctrn = { git = "https://github.com/corbet-foss/ctrn", branch = "main", features = ["arti"] }
+ed25519-dalek = { version = "3.0.0", features = ["digest", "hazmat"] }
+serde_json = "1"
+tempfile = "3"
+tor-hscrypto = "0.46"
+tor-llcrypto = "0.46"
+tor-rtcompat = { version = "0.46", features = ["tokio", "rustls"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 tokio = { version = "1.47", features = ["rt-multi-thread", "macros"] }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
@@ -38,3 +47,7 @@ wasm-bindgen-futures = "0.4"
 [lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"
+
+[[example]]
+name = "tor_records"
+required-features = ["tor"]

@@ -28,7 +28,7 @@ jobs:
           script: |
             const {owner, repo} = context.repo;
             const run = context.payload.workflow_run;
-            const expected = ["resolve", "check", "dependency-policy", "coverage"];
+            const expected = ["resolve", "check", "dependency-policy", "coverage", "tor-records"];
             const workflow = await github.rest.actions.getWorkflow({owner, repo, workflow_id: 'ci.yml'});
             if (run.workflow_id !== workflow.data.id || run.path !== '.github/workflows/ci.yml') {
               throw new Error('Unexpected CI workflow');
