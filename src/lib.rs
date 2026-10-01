@@ -1,53 +1,43 @@
-//! P2P transport facade.
-//!
-//! `cmsh` offers one transport interface to the member side (`cmsg`, the vault's
-//! "send to my device" port, `cdht` through the DHT capability) over network
-//! leaves that implement [`cmsh_api::Backend`] (`cvln` for Veilid, `ctrn` for
-//! Tor):
-//!
-//! - listen and dial by abstract [`Address`] (scheme + bytes);
-//! - reliable streams, multiplexed once here with `yamux` ([`Connection`],
-//!   [`Substream`]) and framed with `tokio-util`'s length-delimited codec
-//!   ([`frame`]);
-//! - declared [`Capabilities`], surfaced per backend ([`Mesh::status`]) and in
-//!   combination ([`Mesh::offered`]);
-//! - a connection [`Policy`] (default: anonymous only) plus the operator's
-//!   minimum standard, executed by `cfbk`: nothing below either is ever used,
-//!   and every switch is recorded ([`Mesh::take_switches`]);
-//! - optional datagrams ([`Mesh::datagrams`]) and the DHT capability hook
-//!   ([`Mesh::dht`]) where a backend offers them.
-//!
-//! The facade is runtime-agnostic: background futures (session drivers,
-//! listener pumps) go to the embedding runtime through [`Spawn`].
+//! Mesh selects anonymous network adapters and carries complete bounded messages.
 #![forbid(unsafe_code)]
-
-pub mod frame;
+mod address;
+mod capabilities;
+mod error;
 mod mesh;
-#[cfg(any(test, feature = "mock"))]
-pub mod mock;
+mod port;
 mod property;
-mod session;
-pub mod streams;
-
-#[cfg(target_arch = "wasm32")]
-pub mod browser;
-
-#[cfg(all(test, not(target_arch = "wasm32")))]
-mod tests;
-
+#[cfg(feature = "tor")]
+mod tor;
+pub use address::{Address, MAX_ADDRESS_BYTES, Scheme};
+pub use async_trait::async_trait;
+pub use capabilities::{Capabilities, LatencyClass};
 pub use cfbk::{Health, Switch, Unavailable};
-pub use cmsh_api::{
-    Address, Backend, BoxStream, ByteStream, Capabilities, Datagrams, Dht, DhtKeyPair, DhtSchema,
-    DhtSchemaMember, DhtValue, Error, ErrorKind, LatencyClass, Listener, MaybeSend, MaybeSync,
-    RecordKey, Scheme,
-};
-pub use mesh::{
-    BackendStatus, Connection, DatagramPort, DhtPort, Incoming, Listening, Mesh, MeshBuilder,
-    MeshError,
-};
+pub use error::{Error, ErrorKind};
+pub use mesh::{BackendStatus, Incoming, Listening, Mesh, MeshBuilder, MeshError};
+pub use port::{Backend, Event, Listener, Reply, ReplyPort};
 pub use property::{Policy, Property, properties};
-pub use session::{MAX_SUBSTREAMS, Role, Session, SessionEvent, Substream};
-
+#[cfg(feature = "tor")]
+pub use tor::Tor;
+/// Send on native runtimes, local on Wasm.
+#[cfg(not(target_arch = "wasm32"))]
+pub trait MaybeSend: Send {}
+#[cfg(not(target_arch = "wasm32"))]
+impl<T: Send + ?Sized> MaybeSend for T {}
+/// Send on native runtimes, local on Wasm.
+#[cfg(target_arch = "wasm32")]
+pub trait MaybeSend {}
+#[cfg(target_arch = "wasm32")]
+impl<T: ?Sized> MaybeSend for T {}
+/// Sync on native runtimes, local on Wasm.
+#[cfg(not(target_arch = "wasm32"))]
+pub trait MaybeSync: Sync {}
+#[cfg(not(target_arch = "wasm32"))]
+impl<T: Sync + ?Sized> MaybeSync for T {}
+/// Sync on native runtimes, local on Wasm.
+#[cfg(target_arch = "wasm32")]
+pub trait MaybeSync {}
+#[cfg(target_arch = "wasm32")]
+impl<T: ?Sized> MaybeSync for T {}
 use std::future::Future;
 use std::pin::Pin;
 

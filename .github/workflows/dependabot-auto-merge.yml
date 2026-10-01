@@ -1,0 +1,80 @@
+name: Dependabot auto-merge
+
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+
+permissions:
+  actions: read
+  checks: read
+  contents: write
+  pull-requests: write
+  statuses: read
+
+concurrency:
+  group: dependabot-auto-merge-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  enable:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # No checkout, artifact download, cache restore or execution of PR code.
+      - uses: actions/github-script@v8
+        with:
+          script: |
+            const {owner, repo} = context.repo;
+            const run = context.payload.workflow_run;
+            const expected = ['resolve', 'check', 'dependency-policy', 'coverage'];
+            const workflow = await github.rest.actions.getWorkflow({owner, repo, workflow_id: 'ci.yml'});
+            if (run.workflow_id !== workflow.data.id || run.path !== '.github/workflows/ci.yml') {
+              throw new Error('Unexpected CI workflow');
+            }
+            const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+              owner, repo, run_id: run.id, filter: 'latest', per_page: 100
+            });
+            if (expected.some(name => !jobs.some(j => j.name === name && j.conclusion === 'success')) ||
+                jobs.some(j => j.status !== 'completed' || j.conclusion !== 'success')) {
+              throw new Error('Substantive CI jobs are missing or not successful');
+            }
+            for (const candidate of run.pull_requests) {
+              const {data: pr} = await github.rest.pulls.get({owner, repo, pull_number: candidate.number});
+              if (pr.user.login !== 'dependabot[bot]' || pr.state !== 'open' || pr.draft ||
+                  pr.base.ref !== 'main' || pr.head.repo?.full_name !== `${owner}/${repo}` ||
+                  pr.head.sha !== run.head_sha) continue;
+              // Required checks protect a subsequent head change after this check.
+              const policy = await github.graphql(`query($owner: String!, $repo: String!) {
+                repository(owner: $owner, name: $repo) {
+                  ref(qualifiedName: "refs/heads/main") {
+                    branchProtectionRule {
+                      requiresStatusChecks requiresStrictStatusChecks isAdminEnforced requiredStatusCheckContexts
+                    }
+                  }
+                }
+              }`, {owner, repo});
+              const protection = policy.repository.ref.branchProtectionRule;
+              const names = new Set(protection?.requiredStatusCheckContexts || []);
+              if (!protection?.requiresStatusChecks || !protection.requiresStrictStatusChecks ||
+                  !protection.isAdminEnforced || expected.some(n => !names.has(n))) {
+                throw new Error('Main must enforce every substantive check, including for administrators');
+              }
+              const checks = await github.paginate(github.rest.checks.listForRef, {
+                owner, repo, ref: pr.head.sha, filter: 'latest', per_page: 100
+              });
+              if (expected.some(n => !checks.some(c => c.name === n && c.app?.slug === 'github-actions' && c.conclusion === 'success')) ||
+                  checks.some(c => c.status !== 'completed' || c.conclusion !== 'success')) {
+                throw new Error('Head check runs are not all successful');
+              }
+              const status = await github.rest.repos.getCombinedStatusForRef({owner, repo, ref: pr.head.sha});
+              if (status.data.total_count && status.data.state !== 'success') throw new Error('Commit status is not successful');
+              const {data: current} = await github.rest.pulls.get({owner, repo, pull_number: pr.number});
+              if (current.head.sha !== run.head_sha || current.state !== 'open') continue;
+              await github.graphql(`mutation($id: ID!) {
+                enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: SQUASH}) {
+                  pullRequest { number }
+                }
+              }`, {id: current.node_id});
+            }

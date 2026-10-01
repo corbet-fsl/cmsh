@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Enforce immutable declarations and one locked revision per first-party crate."""
+"""Require main declarations and one resolved revision per first-party crate."""
 import re
+import subprocess
 import sys
 import tomllib
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-FIRST_PARTY = re.compile(r"^(?:git\+)?https://github\.com/corbet-(?:foss|libs)/")
+FIRST_PARTY = re.compile(r"^(?:git\+)?https://github\.com/(?:corbet-(?:foss|libs)|cmtymeet)/")
 SHA = re.compile(r"^[0-9a-f]{40}$")
 
 
@@ -17,17 +18,20 @@ def check_lock(packages):
         if len(entries) != 1:
             raise ValueError(f'Duplicate first-party crate: {name}')
         source = urlsplit(entries[0]['source'].removeprefix('git+'))
-        query = parse_qs(source.query)
-        rev = query.get('rev', [''])[0]
-        if set(query) != {'rev'} or len(query['rev']) != 1 or not SHA.fullmatch(rev) or source.fragment != rev:
-            raise ValueError(f'Expected one full matching revision for {name}')
+        query = parse_qs(source.query, keep_blank_values=True)
+        if not SHA.fullmatch(source.fragment):
+            raise ValueError(f'Missing resolved revision for {name}')
+        # An upstream not yet migrated may still select an immutable revision.
+        # Its local owner must migrate it; it cannot introduce a second copy here.
+        if query != {'branch': ['main']} and query != {'rev': [source.fragment]}:
+            raise ValueError(f'Invalid first-party source selector for {name}')
 
 
 def check_manifest(value):
     if isinstance(value, dict):
         if FIRST_PARTY.match(value.get('git', '')):
-            if not SHA.fullmatch(value.get('rev', '')) or 'branch' in value or 'tag' in value:
-                raise ValueError('First-party dependency must declare a full revision')
+            if value.get('branch') != 'main' or {'rev', 'tag'}.intersection(value):
+                raise ValueError('First-party dependency must declare branch = "main"')
         for item in value.values():
             check_manifest(item)
     elif isinstance(value, list):
@@ -35,34 +39,45 @@ def check_manifest(value):
             check_manifest(item)
 
 
+def rejects(function, value):
+    try:
+        function(value)
+    except ValueError:
+        return
+    raise AssertionError(f'Invalid input accepted: {value!r}')
+
+
 def self_test():
-    source = 'git+https://github.com/corbet-foss/example?rev=' + 'a' * 40 + '#' + 'a' * 40
+    repo = 'https://github.com/corbet-foss/example'
+    source = 'git+' + repo + '?branch=main#' + 'a' * 40
     package = {'name': 'example', 'source': source}
     check_lock([package])
     check_lock([{'name': 'local'}])
-    invalid = [[package, package], [package, {'name': 'example'}],
-               [{'name': 'example', 'source': source.replace('?rev=', '?branch=')}],
-               [{'name': 'example', 'source': source[:-1] + 'b'}]]
-    for packages in invalid:
-        try:
-            check_lock(packages)
-        except ValueError:
-            continue
-        raise AssertionError('Invalid lockfile accepted')
-    for value in [{'git': 'https://github.com/corbet-libs/example', 'branch': 'main'},
-                  {'git': 'https://github.com/corbet-foss/example', 'rev': 'abc123'}]:
-        try:
-            check_manifest({'dependencies': {'example': value}})
-        except ValueError:
-            continue
-        raise AssertionError('Floating declaration accepted')
+    check_lock([dict(package, source='git+' + repo + '?rev=' + 'a' * 40 + '#' + 'a' * 40)])
+    for packages in ([package, package], [package, {'name': 'example'}],
+                     [package, dict(package, source=source[:-1] + 'b')],
+                     [dict(package, source=source.replace('main', 'develop'))],
+                     [dict(package, source=source.replace('branch=main', 'tag=v1'))],
+                     [dict(package, source=source.replace('branch=main', 'rev=' + 'b' * 40))],
+                     [dict(package, source=source.replace('#' + 'a' * 40, '#short'))],
+                     [dict(package, source=source.replace('branch=main', 'branch=main&branch=main'))]):
+        rejects(check_lock, packages)
+    for declaration in ({'git': repo}, {'git': repo, 'rev': 'a' * 40},
+                        {'git': repo, 'branch': 'other'},
+                        {'git': repo, 'branch': 'main', 'rev': 'a' * 40},
+                        {'git': repo, 'branch': 'main', 'tag': 'v1'}):
+        rejects(check_manifest, {'target': {'cfg(wasm)': {'dependencies': {'alias': declaration}}}})
+    check_manifest({'workspace': {'dependencies': {'alias': {'git': repo, 'package': 'example', 'branch': 'main'}}}})
 
 
 if __name__ == '__main__':
     self_test()
     if '--self-test' not in sys.argv:
-        check_lock(tomllib.loads(Path('Cargo.lock').read_text())['package'])
-        for manifest in Path('.').rglob('Cargo.toml'):
-            if not {'.git', 'target', 'node_modules'}.intersection(manifest.parts):
-                check_manifest(tomllib.loads(manifest.read_text()))
-        print('First-party declarations and lockfile revisions are unique and pinned')
+        paths = subprocess.check_output(['git', 'ls-files', '-z'], text=True).split('\0')
+        for name in paths:
+            path = Path(name)
+            if path.name == 'Cargo.toml':
+                check_manifest(tomllib.loads(path.read_text()))
+            elif path.name == 'Cargo.lock':
+                check_lock(tomllib.loads(path.read_text())['package'])
+        print('First-party declarations follow main; locked crate revisions are unique')

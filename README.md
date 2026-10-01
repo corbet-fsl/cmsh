@@ -1,32 +1,30 @@
 # cmsh
 
-Mesh is the member device's transport-neutral facade. It wires the existing
-LGPL `cmsh-api` backend port, `cfbk` selection, yamux sessions and the bounded
-`streams` module. Configure only `ctrn` for the launch; future Veilid support
-plugs into the same interface. There is no direct-network fallback.
+Mesh is the member device's transport-neutral facade for bounded messages,
+request/reply calls, observable network health and qualified backend selection.
+It uses [Fallback (`cfbk`)](https://github.com/corbet-foss/cfbk) for selection;
+anonymity remains mandatory. There is no direct-network fallback or second
+policy machine.
 
-API, states, format, bounds and verification: [docs/CONTRACT.md](docs/CONTRACT.md).
+Mesh owns its message ports. The optional `tor` adapter depends downward on
+[ctrn](https://github.com/corbet-foss/ctrn), whose
+[Ferry (`cfry`)](https://github.com/corbet-foss/cfry) sublibrary owns framing,
+partial reads, backpressure and stream lifecycle. Veilid's `app_message` and
+`app_call` model the public shape; no byte-stream assumption reaches consumers.
+The old `cmsh-api` workspace package and secret-bearing DHT port are removed.
 
-## Reuse and maintained candidates
+API, bounds, failure semantics and verification: [contract](docs/CONTRACT.md).
 
-- [futures-io](https://docs.rs/futures-io): frozen ordered byte-stream port.
-- [tokio-util LengthDelimitedCodec](https://docs.rs/tokio-util/latest/tokio_util/codec/length_delimited/): existing framing, retained with explicit EOF and cancellation lifecycle.
-- [yamux](https://docs.rs/yamux): existing bounded multiplexing, retained.
-- [cfbk](https://github.com/corbet-foss/cfbk): existing ordered selection, pinned by revision. No second policy engine.
-- cmsg framing and browser stream adapters: reference for fail-closed ownership
-  during partial I/O. Domain messages and ACKs remain outside Mesh.
+## Reuse and validation
 
-## CI
+- `cfbk` performs ordered selection under minimum guarantees and health.
+- `futures` supplies bounded receive channels and cancellation.
+- `ctrn` supplies real Tor onion I/O; Ferry uses maintained tokio-util and yamux.
+- Native and executed Wasm contracts use actual Ferry frames over backpressured
+  byte I/O. Actual private Tor/browser probes remain separately gated in ctrn.
 
-GitHub Actions runs stable Rust fmt, Clippy, native tests, a wasm32 check and
-identical wasm stream vectors in the wasm-bindgen runner. Dependency identities
-are retained in Cargo.lock and checked for unique immutable first-party pins.
-The real private Tor network integration runs in ctrn; no accounts are needed.
-No package is published and no infrastructure is deployed.
+First-party dependencies follow `main`; CI resolves one shared lock snapshot and
+checks one revision per crate. Dependabot updates Cargo and Actions. Strict line
+and branch coverage must both pass before review; no compile-only acceptance.
 
-## License
-
-The facade and streams module are FSL-1.1-ALv2; see [LICENSE.md](LICENSE.md).
-The pre-existing `cmsh-api/` backend port remains LGPL-3.0-only WITH
-LGPL-3.0-linking-exception. The unnamed streams implementation stays a module
-here until the owner selects its eventual leaf name.
+FSL-1.1-ALv2; see [LICENSE.md](LICENSE.md).

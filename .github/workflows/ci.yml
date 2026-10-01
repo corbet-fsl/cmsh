@@ -1,0 +1,169 @@
+name: ci
+permissions:
+  contents: read
+concurrency:
+  group: ci
+  cancel-in-progress: false
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.pull_request.head.sha || github.sha }}
+        persist-credentials: false
+    - uses: dtolnay/rust-toolchain@stable
+    - name: Resolve one fresh dependency snapshot
+      run: 'cargo update
+
+        rustc --version > resolver.txt
+
+        cargo --version >> resolver.txt
+
+        date -u +%FT%TZ >> resolver.txt
+
+        sha256sum Cargo.lock >> resolver.txt'
+    - uses: actions/upload-artifact@v4
+      with:
+        name: resolved-lock
+        path: 'Cargo.lock
+
+          resolver.txt'
+        retention-days: 7
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.pull_request.head.sha || github.sha }}
+        persist-credentials: false
+    - uses: actions/download-artifact@v4
+      with:
+        name: resolved-lock
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+        targets: wasm32-unknown-unknown
+    - uses: Swatinem/rust-cache@v2
+      with:
+        cache-on-failure: true
+    - run: rustc --version
+    - run: cargo metadata --locked --format-version 1 > dependency-metadata.json
+    - run: python3 .github/check-first-party.py
+    - run: cargo fmt --all --check
+    - run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+    - run: cargo test --locked --workspace --all-features
+    - run: cargo check --locked --target wasm32-unknown-unknown --lib
+    - name: Install matching wasm runner
+      run: 'cargo metadata --locked --format-version 1 > dependency-metadata.json
+
+        version=$(jq -r ''.packages[] | select(.name == "wasm-bindgen") | .version'' dependency-metadata.json)
+
+        archive="wasm-bindgen-${version}-x86_64-unknown-linux-musl.tar.gz"
+
+        base="https://github.com/wasm-bindgen/wasm-bindgen/releases/download/${version}"
+
+        mkdir -p "$RUNNER_TEMP/wasm-runner"
+
+        cd "$RUNNER_TEMP/wasm-runner"
+
+        curl -A ''transport-ci/1.0'' --fail --location --retry 3 --remote-name "$base/$archive"
+
+        curl -A ''transport-ci/1.0'' --fail --location --retry 3 --remote-name "$base/$archive.sha256sum"
+
+        checksum=$(cut -d '' '' -f1 "$archive.sha256sum")
+
+        printf ''%s  %s\n'' "$checksum" "$archive" | sha256sum --check
+
+        tar -xzf "$archive" --strip-components=1
+
+        echo "$PWD" >> "$GITHUB_PATH"
+
+        '
+    - name: Execute identical wasm message vectors
+      env:
+        CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER: wasm-bindgen-test-runner
+      run: cargo test --locked --target wasm32-unknown-unknown --test contracts
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: dependency-lock
+        path: 'Cargo.lock
+
+          dependency-metadata.json
+
+          '
+    needs:
+    - resolve
+  dependency-policy:
+    needs:
+    - resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.pull_request.head.sha || github.sha }}
+        persist-credentials: false
+    - uses: actions/download-artifact@v4
+      with:
+        name: resolved-lock
+    - run: python3 .github/check-first-party.py
+  coverage:
+    needs:
+    - resolve
+    - check
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.pull_request.head.sha || github.sha }}
+        persist-credentials: false
+    - uses: actions/download-artifact@v4
+      with:
+        name: resolved-lock
+    - uses: dtolnay/rust-toolchain@nightly
+      with:
+        components: llvm-tools-preview
+    - uses: Swatinem/rust-cache@v2
+      with:
+        prefix-key: coverage
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-llvm-cov
+    - run: 'rustc --version
+
+        cargo llvm-cov --version'
+    - name: Measure real native round trips and failure paths
+      run: cargo llvm-cov --locked --workspace --all-features --branch --no-cfg-coverage --no-cfg-coverage-nightly
+        --ignore-filename-regex '/tests/' --json --output-path coverage.json
+    - name: Require complete line and branch coverage
+      run: python3 .github/check-coverage.py coverage.json
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: coverage
+        path: 'coverage.json
+
+          Cargo.lock
+
+          resolver.txt'
+        retention-days: 7
+'on':
+  push:
+    branches:
+    - main
+    - candidate/**
+    paths-ignore:
+    - docs/**
+    - AGENTS.md
+    - LICENSE.md
+  pull_request: null
+  workflow_dispatch: null
+env:
+  CARGO_BUILD_JOBS: 2
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_TERM_COLOR: always

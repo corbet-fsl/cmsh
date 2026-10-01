@@ -1,6 +1,6 @@
 //! The requirement vocabulary: properties derived from capabilities, and the
 //! consumer's connection policy.
-use cmsh_api::{Capabilities, LatencyClass};
+use crate::{Capabilities, LatencyClass};
 use std::collections::BTreeSet;
 
 /// A property a backend can offer and a policy can require.
@@ -56,8 +56,8 @@ impl Policy {
         }
     }
 
-    /// No requirement of the consumer's own. For products without a privacy
-    /// promise; the operator's minimum standard still applies.
+    /// No additional consumer requirement. Mesh still requires anonymity
+    /// and applies the configured minimum guarantees.
     pub fn unrestricted() -> Self {
         Self {
             require: BTreeSet::new(),

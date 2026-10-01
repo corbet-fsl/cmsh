@@ -24,11 +24,11 @@ pub struct Capabilities {
     /// threat model. This is not resistance to global timing correlation, nor
     /// a claim that different anonymity networks offer equivalent protection.
     pub anonymous: bool,
-    /// Unreliable datagrams via [`crate::Backend::datagrams`].
+    /// Unreliable datagrams, only when independently implemented and qualified.
     pub datagrams: bool,
     /// Delivery while the recipient is offline (store-and-forward).
     pub offline_delivery: bool,
-    /// A DHT via [`crate::Backend::dht`].
+    /// A byte-preserving DHT port, only when independently qualified.
     pub dht: bool,
     /// Expected latency.
     pub latency: LatencyClass,
