@@ -93,9 +93,6 @@ struct TorReply(ctrn::Reply);
 #[cfg_attr(target_arch="wasm32",async_trait(?Send))]
 impl ReplyPort for TorReply {
     async fn send(self: Box<Self>, payload: &[u8]) -> Result<(), Error> {
-        self.0
-            .send(payload)
-            .await
-            .map_err(|e| failure(ctrn::messages::failure(e)))
+        self.0.send(payload).await.map_err(failure)
     }
 }

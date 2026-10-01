@@ -28,7 +28,7 @@ jobs:
           script: |
             const {owner, repo} = context.repo;
             const run = context.payload.workflow_run;
-            const expected = ['resolve', 'check', 'dependency-policy', 'coverage'];
+            const expected = ["resolve", "check", "dependency-policy", "coverage"];
             const workflow = await github.rest.actions.getWorkflow({owner, repo, workflow_id: 'ci.yml'});
             if (run.workflow_id !== workflow.data.id || run.path !== '.github/workflows/ci.yml') {
               throw new Error('Unexpected CI workflow');
@@ -40,25 +40,27 @@ jobs:
                 jobs.some(j => j.status !== 'completed' || j.conclusion !== 'success')) {
               throw new Error('Substantive CI jobs are missing or not successful');
             }
-            for (const candidate of run.pull_requests) {
+            // workflow_run can omit PR associations, including for Dependabot.
+            const candidates = run.pull_requests?.length ? run.pull_requests :
+              await github.paginate(github.rest.repos.listPullRequestsAssociatedWithCommit, {
+                owner, repo, commit_sha: run.head_sha, per_page: 100
+              });
+            if (!candidates.length) throw new Error('No pull request metadata for the tested head');
+            for (const candidate of candidates) {
               const {data: pr} = await github.rest.pulls.get({owner, repo, pull_number: candidate.number});
               if (pr.user.login !== 'dependabot[bot]' || pr.state !== 'open' || pr.draft ||
                   pr.base.ref !== 'main' || pr.head.repo?.full_name !== `${owner}/${repo}` ||
                   pr.head.sha !== run.head_sha) continue;
-              // Required checks protect a subsequent head change after this check.
-              const policy = await github.graphql(`query($owner: String!, $repo: String!) {
-                repository(owner: $owner, name: $repo) {
-                  ref(qualifiedName: "refs/heads/main") {
-                    branchProtectionRule {
-                      requiresStatusChecks requiresStrictStatusChecks isAdminEnforced requiredStatusCheckContexts
-                    }
-                  }
-                }
-              }`, {owner, repo});
-              const protection = policy.repository.ref.branchProtectionRule;
-              const names = new Set(protection?.requiredStatusCheckContexts || []);
-              if (!protection?.requiresStatusChecks || !protection.requiresStrictStatusChecks ||
-                  !protection.isAdminEnforced || expected.some(n => !names.has(n))) {
+              // Public branch metadata needs no administrative token. GitHub
+              // enforces the owner's strict/admin protection at the merge call.
+              const {data: branch} = await github.rest.repos.getBranch({owner, repo, branch: 'main'});
+              const protection = branch.protection?.required_status_checks;
+              const names = new Set([
+                ...(protection?.contexts || []),
+                ...(protection?.checks || []).map(check => check.context)
+              ]);
+              if (!branch.protected || protection?.enforcement_level !== 'everyone' ||
+                  expected.some(name => !names.has(name))) {
                 throw new Error('Main must enforce every substantive check, including for administrators');
               }
               const checks = await github.paginate(github.rest.checks.listForRef, {
@@ -71,10 +73,15 @@ jobs:
               const status = await github.rest.repos.getCombinedStatusForRef({owner, repo, ref: pr.head.sha});
               if (status.data.total_count && status.data.state !== 'success') throw new Error('Commit status is not successful');
               const {data: current} = await github.rest.pulls.get({owner, repo, pull_number: pr.number});
-              if (current.head.sha !== run.head_sha || current.state !== 'open') continue;
-              await github.graphql(`mutation($id: ID!) {
-                enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: SQUASH}) {
-                  pullRequest { number }
-                }
-              }`, {id: current.node_id});
+              if (current.head.sha !== run.head_sha || current.state !== 'open' ||
+                  current.draft || current.base.ref !== 'main' ||
+                  current.head.repo?.full_name !== `${owner}/${repo}` ||
+                  current.user.login !== 'dependabot[bot]') continue;
+              // SHA is an atomic precondition; a newer PR head cannot be merged
+              // on this run's evidence. Ordinary branch protections still apply.
+              const {data: merged} = await github.rest.pulls.merge({
+                owner, repo, pull_number: current.number,
+                sha: run.head_sha, merge_method: 'squash'
+              });
+              if (!merged.merged) throw new Error('GitHub refused the protected merge');
             }

@@ -72,3 +72,7 @@ impl From<Error> for std::io::Error {
         std::io::Error::new(kind, error)
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/support/error_unit.rs"]
+mod tests;

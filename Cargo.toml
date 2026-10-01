@@ -2,7 +2,7 @@
 name = "cmsh"
 version = "0.0.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.98"
 description = "P2P transport facade: bounded messages, fallback and guarantees over the cvln and ctrn networks"
 license = "FSL-1.1-ALv2"
 repository = "https://github.com/corbet-libs/cmsh"

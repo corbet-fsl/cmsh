@@ -14,6 +14,8 @@ jobs:
         ref: ${{ github.event.pull_request.head.sha || github.sha }}
         persist-credentials: false
     - uses: dtolnay/rust-toolchain@stable
+    - name: Validate the committed dependency snapshot
+      run: python3 .github/check-first-party.py
     - name: Resolve one fresh dependency snapshot
       run: 'cargo update
 
@@ -85,7 +87,7 @@ jobs:
     - name: Execute identical wasm message vectors
       env:
         CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER: wasm-bindgen-test-runner
-      run: cargo test --locked --target wasm32-unknown-unknown --test contracts
+      run: cargo test --locked --all-features --target wasm32-unknown-unknown --test contracts --test tor_port
     - uses: actions/upload-artifact@v4
       if: always()
       with:
@@ -140,8 +142,12 @@ jobs:
     - name: Measure real native round trips and failure paths
       run: cargo llvm-cov --locked --workspace --all-features --branch --no-cfg-coverage --no-cfg-coverage-nightly
         --ignore-filename-regex '/tests/' --json --output-path coverage.json
+    - name: Export source coverage from the same execution
+      run: 'cargo llvm-cov report --branch --ignore-filename-regex ''/tests/'' --lcov --output-path coverage.lcov
+
+        cargo llvm-cov report --branch --ignore-filename-regex ''/tests/'' --text --output-path coverage.txt'
     - name: Require complete line and branch coverage
-      run: python3 .github/check-coverage.py coverage.json
+      run: python3 .github/test-source-coverage.py && python3 .github/check-source-coverage.py coverage.lcov coverage.json coverage.txt
     - uses: actions/upload-artifact@v4
       if: always()
       with:
@@ -150,7 +156,11 @@ jobs:
 
           Cargo.lock
 
-          resolver.txt'
+          resolver.txt
+
+          coverage.lcov
+
+          coverage.txt'
         retention-days: 7
 'on':
   push:

@@ -255,49 +255,18 @@ impl Mesh {
             let backend = self
                 .backend(&scheme)
                 .ok_or(MeshError::Config("missing backend"))?;
-            let mut listener = self.outcome(&scheme, backend.listen().await)?;
+            let listener = self.outcome(&scheme, backend.listen().await)?;
             if listener.address().scheme() != &scheme {
                 return Err(MeshError::Config("listener network mismatch"));
             }
             listening.addresses.push(listener.address().clone());
             let maximum = backend.max_payload();
-            let mut sender = sender.clone();
+            let sender = sender.clone();
             let (abort, registration) = AbortHandle::new_pair();
             listening.pumps.push(abort);
             self.spawn.spawn(Box::pin(async move {
-                let _ = Abortable::new(
-                    async move {
-                        loop {
-                            let event = match listener.next().await {
-                                Ok(Event::Message(payload)) if payload.len() <= maximum => {
-                                    Incoming::Message {
-                                        backend: scheme.clone(),
-                                        payload,
-                                    }
-                                }
-                                Ok(Event::Call { payload, reply }) if payload.len() <= maximum => {
-                                    Incoming::Call {
-                                        backend: scheme.clone(),
-                                        payload,
-                                        reply,
-                                    }
-                                }
-                                Ok(_) => {
-                                    Incoming::ListenerClosed(scheme.clone(), ErrorKind::Protocol)
-                                }
-                                Err(error) => {
-                                    Incoming::ListenerClosed(scheme.clone(), error.kind())
-                                }
-                            };
-                            let closed = matches!(event, Incoming::ListenerClosed(..));
-                            if sender.send(event).await.is_err() || closed {
-                                break;
-                            }
-                        }
-                    },
-                    registration,
-                )
-                .await;
+                let _ =
+                    Abortable::new(forward(listener, scheme, maximum, sender), registration).await;
             }));
         }
         if listening.addresses.is_empty() {
@@ -310,6 +279,33 @@ impl Mesh {
         Ok(listening)
     }
 }
+async fn forward(
+    mut listener: Box<dyn crate::Listener>,
+    scheme: Scheme,
+    maximum: usize,
+    mut sender: mpsc::Sender<Incoming>,
+) {
+    loop {
+        let event = match listener.next().await {
+            Ok(Event::Message(payload)) if payload.len() <= maximum => Incoming::Message {
+                backend: scheme.clone(),
+                payload,
+            },
+            Ok(Event::Call { payload, reply }) if payload.len() <= maximum => Incoming::Call {
+                backend: scheme.clone(),
+                payload,
+                reply: reply.limit_to(maximum),
+            },
+            Ok(_) => Incoming::ListenerClosed(scheme.clone(), ErrorKind::Protocol),
+            Err(error) => Incoming::ListenerClosed(scheme.clone(), error.kind()),
+        };
+        let closed = matches!(event, Incoming::ListenerClosed(..));
+        if sender.send(event).await.is_err() || closed {
+            break;
+        }
+    }
+}
+
 /// Message events reveal no caller identity; owners authenticate opaque payloads.
 pub enum Incoming {
     /// Complete one-way message.
@@ -338,7 +334,8 @@ pub struct Listening {
     pumps: Vec<AbortHandle>,
 }
 impl Listening {
-    /// Addresses currently published by this handle.
+    /// Initially published addresses. Withdraw a network's address when its
+    /// [`Incoming::ListenerClosed`] event arrives; `close` clears the whole list.
     pub fn addresses(&self) -> &[Address] {
         &self.addresses
     }
@@ -360,3 +357,7 @@ impl Drop for Listening {
         self.close();
     }
 }
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+#[path = "../tests/support/pump.rs"]
+mod pump_tests;

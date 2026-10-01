@@ -42,6 +42,7 @@ struct Wire {
     there: Address,
     caps: Capabilities,
     maximum: usize,
+    listen_address: Option<Address>,
 }
 fn pair(name: &str, anonymous: bool) -> (Arc<Wire>, Arc<Wire>) {
     let (a, b) = tokio::io::duplex(64);
@@ -82,6 +83,7 @@ fn pair(name: &str, anonymous: bool) -> (Arc<Wire>, Arc<Wire>) {
             there: right.clone(),
             caps,
             maximum: 1024,
+            listen_address: None,
         }),
         Arc::new(Wire {
             peer: b,
@@ -89,6 +91,7 @@ fn pair(name: &str, anonymous: bool) -> (Arc<Wire>, Arc<Wire>) {
             there: left,
             caps,
             maximum: 1024,
+            listen_address: None,
         }),
     )
 }
@@ -105,7 +108,12 @@ impl Backend for Wire {
         self.maximum
     }
     async fn listen(&self) -> Result<Box<dyn Listener>, Error> {
-        Ok(Box::new(Receiver(self.peer.clone(), self.here.clone())))
+        Ok(Box::new(Receiver(
+            self.peer.clone(),
+            self.listen_address
+                .clone()
+                .unwrap_or_else(|| self.here.clone()),
+        )))
     }
     async fn app_message(&self, to: &Address, payload: &[u8]) -> Result<(), Error> {
         if to != &self.there {
@@ -315,4 +323,108 @@ async fn mandatory_anonymity_and_declared_capabilities_fail_closed() {
             .build()
             .is_err()
     );
+}
+
+#[cfg_attr(not(target_arch = "wasm32"), tokio::test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+async fn optional_ports_and_listener_identity_require_qualification() {
+    for capability in 0..3 {
+        let (a, _) = pair("fixture", true);
+        let mut a = Arc::try_unwrap(a).ok().unwrap();
+        match capability {
+            0 => a.caps.datagrams = true,
+            1 => a.caps.dht = true,
+            _ => a.caps.offline_delivery = true,
+        }
+        let result = Mesh::builder(Arc::new(spawn)).backend(Arc::new(a)).build();
+        assert!(matches!(
+            result,
+            Err(MeshError::Config("unqualified optional capability"))
+        ));
+    }
+    let (a, _) = pair("fixture", true);
+    let mut a = Arc::try_unwrap(a).ok().unwrap();
+    a.listen_address = Some(Address::new(Scheme::new("other").unwrap(), vec![1]).unwrap());
+    assert!(matches!(
+        mesh(vec![Arc::new(a)]).listen().await,
+        Err(MeshError::Config("listener network mismatch"))
+    ));
+}
+
+#[cfg_attr(not(target_arch = "wasm32"), tokio::test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+async fn actual_inbound_messages_and_calls_cannot_exceed_mesh_bound() {
+    for call in [false, true] {
+        let (a, b) = pair("fixture", true);
+        let mut b = Arc::try_unwrap(b).ok().unwrap();
+        b.maximum = 1;
+        let m = mesh(vec![Arc::new(b)]);
+        let listening = m.listen().await.unwrap();
+        let receive = async {
+            assert!(matches!(
+                listening.next().await,
+                Some(Incoming::ListenerClosed(_, ErrorKind::Protocol))
+            ));
+            assert!(listening.next().await.is_none());
+        };
+        let send = async {
+            if call {
+                assert!(a.peer.app_call(b"too big").await.is_err());
+            } else {
+                a.peer.app_message(b"too big").await.unwrap();
+            }
+        };
+        futures::join!(send, receive);
+    }
+}
+
+#[cfg_attr(not(target_arch = "wasm32"), tokio::test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+async fn original_call_and_reply_bounds_are_enforced_independently() {
+    let (a, b) = pair("fixture", true);
+    let mut a = Arc::try_unwrap(a).ok().unwrap();
+    a.maximum = 1;
+    let destination = a.there.clone();
+    let m = mesh(vec![Arc::new(a)]);
+    let send = async {
+        assert!(
+            matches!(m.app_call(&[destination], b"x").await, Err(MeshError::Backend(e)) if e.kind() == ErrorKind::Protocol)
+        );
+    };
+    let receive = async {
+        let cfry::Received::Call { reply, .. } = b.peer.next().await.unwrap() else {
+            panic!("call")
+        };
+        reply.send(b"oversized").await.unwrap();
+    };
+    futures::join!(send, receive);
+    let send = async {
+        assert!(b.peer.app_call(b"x").await.is_err());
+    };
+    let listening = m.listen().await.unwrap();
+    let receive = async {
+        let Incoming::Call { reply, .. } = listening.next().await.unwrap() else {
+            panic!("call")
+        };
+        assert_eq!(
+            reply.send(&[0; 2]).await.unwrap_err().kind(),
+            ErrorKind::Limit
+        );
+    };
+    futures::join!(send, receive);
+}
+
+#[cfg_attr(not(target_arch = "wasm32"), tokio::test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+async fn health_events_are_bounded_and_no_change_adds_no_event() {
+    let (a, _) = pair("first", true);
+    let (b, _) = pair("second", true);
+    let m = mesh(vec![a.clone(), b]);
+    m.report(&a.scheme(), Health::Healthy).unwrap();
+    assert!(m.take_switches().is_empty());
+    for _ in 0..40 {
+        m.report(&a.scheme(), Health::Failed).unwrap();
+        m.report(&a.scheme(), Health::Healthy).unwrap();
+    }
+    assert_eq!(m.take_switches().len(), 64);
 }

@@ -21,9 +21,7 @@ def check_lock(packages):
         query = parse_qs(source.query, keep_blank_values=True)
         if not SHA.fullmatch(source.fragment):
             raise ValueError(f'Missing resolved revision for {name}')
-        # An upstream not yet migrated may still select an immutable revision.
-        # Its local owner must migrate it; it cannot introduce a second copy here.
-        if query != {'branch': ['main']} and query != {'rev': [source.fragment]}:
+        if query != {'branch': ['main']}:
             raise ValueError(f'Invalid first-party source selector for {name}')
 
 
@@ -53,7 +51,7 @@ def self_test():
     package = {'name': 'example', 'source': source}
     check_lock([package])
     check_lock([{'name': 'local'}])
-    check_lock([dict(package, source='git+' + repo + '?rev=' + 'a' * 40 + '#' + 'a' * 40)])
+    rejects(check_lock, [dict(package, source='git+' + repo + '?rev=' + 'a' * 40 + '#' + 'a' * 40)])
     for packages in ([package, package], [package, {'name': 'example'}],
                      [package, dict(package, source=source[:-1] + 'b')],
                      [dict(package, source=source.replace('main', 'develop'))],

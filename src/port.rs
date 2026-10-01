@@ -57,6 +57,10 @@ impl Reply {
     pub fn new(port: Box<dyn ReplyPort>, maximum: usize) -> Self {
         Self { port, maximum }
     }
+    pub(crate) fn limit_to(mut self, maximum: usize) -> Self {
+        self.maximum = self.maximum.min(maximum);
+        self
+    }
     /// Reply once, with the original network's limit and failure semantics.
     pub async fn send(self, payload: &[u8]) -> Result<(), Error> {
         if payload.len() > self.maximum {
