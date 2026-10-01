@@ -7,6 +7,7 @@ use cfbk::{Candidate, Config, Fallback, Health, Switch, Unavailable};
 use cmsh_api::{Address, Backend, BoxStream, Capabilities, Dht, Error, ErrorKind, Scheme};
 use futures::StreamExt;
 use futures::channel::mpsc;
+use futures::future::{AbortHandle, Abortable};
 use futures::lock::Mutex as AsyncMutex;
 use std::collections::BTreeSet;
 use std::fmt;
@@ -283,13 +284,14 @@ impl Mesh {
             let fallback = self.lock();
             fallback
                 .order()
-                .filter(|scheme| fallback.is_acceptable(scheme))
+                .filter(|scheme| fallback.usable().any(|usable| usable == *scheme))
                 .cloned()
                 .collect()
         };
         let (sender, receiver) = mpsc::channel(ACCEPT_QUEUE);
         let mut addresses = Vec::new();
         let mut failures = Vec::new();
+        let mut pumps = Vec::new();
         for scheme in schemes {
             let Some(backend) = self.backend(&scheme) else {
                 continue;
@@ -300,19 +302,33 @@ impl Mesh {
                     let mut sender = sender.clone();
                     let capabilities = backend.capabilities();
                     let pump_scheme = scheme.clone();
+                    let (abort, registration) = AbortHandle::new_pair();
+                    pumps.push(abort);
                     self.spawn.spawn(Box::pin(async move {
-                        loop {
-                            let event = match listener.accept().await {
-                                Ok(stream) => {
-                                    Accepted::Stream(pump_scheme.clone(), capabilities, stream)
+                        let _ = Abortable::new(
+                            async move {
+                                loop {
+                                    let event = match listener.accept().await {
+                                        Ok(stream) => Accepted::Stream(
+                                            pump_scheme.clone(),
+                                            capabilities,
+                                            stream,
+                                        ),
+                                        Err(error) => {
+                                            Accepted::Closed(pump_scheme.clone(), error.kind())
+                                        }
+                                    };
+                                    let closed = matches!(event, Accepted::Closed(..));
+                                    if futures::SinkExt::send(&mut sender, event).await.is_err()
+                                        || closed
+                                    {
+                                        return;
+                                    }
                                 }
-                                Err(error) => Accepted::Closed(pump_scheme.clone(), error.kind()),
-                            };
-                            let closed = matches!(event, Accepted::Closed(..));
-                            if futures::SinkExt::send(&mut sender, event).await.is_err() || closed {
-                                return;
-                            }
-                        }
+                            },
+                            registration,
+                        )
+                        .await;
                     }));
                 }
                 Err(error) => {
@@ -338,6 +354,7 @@ impl Mesh {
             addresses,
             receiver: AsyncMutex::new(receiver),
             spawn: self.spawn.clone(),
+            pumps,
         })
     }
 
@@ -459,6 +476,11 @@ impl Connection {
         self.session.accept().await
     }
 
+    /// Terminal event once across cloned connections. Never a delivery receipt.
+    pub async fn next_event(&self) -> Option<crate::SessionEvent> {
+        self.session.next_event().await
+    }
+
     /// Close the connection (all substreams).
     pub async fn close(&self) -> Result<(), Error> {
         self.session.close().await
@@ -486,9 +508,26 @@ pub struct Listening {
     addresses: Vec<Address>,
     receiver: AsyncMutex<mpsc::Receiver<Accepted>>,
     spawn: Arc<dyn Spawn>,
+    pumps: Vec<AbortHandle>,
+}
+
+impl Drop for Listening {
+    fn drop(&mut self) {
+        for pump in &self.pumps {
+            pump.abort();
+        }
+    }
 }
 
 impl Listening {
+    /// Stop every owned listener pump and withdraw its reachability.
+    pub fn close(&mut self) {
+        for pump in self.pumps.drain(..) {
+            pump.abort();
+        }
+        self.addresses.clear();
+        self.receiver.get_mut().close();
+    }
     /// The addresses to publish (one per network, in preference order).
     pub fn addresses(&self) -> &[Address] {
         &self.addresses

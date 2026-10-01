@@ -385,3 +385,34 @@ async fn datagrams_and_dht_through_the_facade() {
     assert_eq!(value.data, b"record");
     assert_eq!(value.seq, 0);
 }
+
+#[tokio::test]
+async fn driver_cancellation_emits_one_session_event_without_success() {
+    let io = Box::new(futures::io::Cursor::new(Vec::<u8>::new()));
+    let (session, driver) = Session::new(io, Role::Dialer);
+    let other = session.clone();
+    use futures::FutureExt;
+    assert!(session.next_event().now_or_never().is_none());
+    drop(driver);
+    assert_eq!(session.next_event().await, Some(SessionEvent::Closed));
+    assert_eq!(other.next_event().await, None);
+    assert!(session.open().await.is_err());
+}
+
+#[tokio::test]
+async fn pending_opens_have_a_finite_budget() {
+    use std::{future::Future, task::Context};
+    let io = Box::new(futures::io::Cursor::new(Vec::<u8>::new()));
+    let (session, driver) = Session::new(io, Role::Dialer);
+    let mut pending = Vec::new();
+    let mut cx = Context::from_waker(futures::task::noop_waker_ref());
+    for _ in 0..MAX_SUBSTREAMS {
+        let mut call = Box::pin(session.open());
+        assert!(call.as_mut().poll(&mut cx).is_pending());
+        pending.push(call);
+    }
+    assert_eq!(session.open().await.unwrap_err().kind(), ErrorKind::Limit);
+    drop(pending);
+    drop(driver);
+    assert!(session.open().await.is_err());
+}

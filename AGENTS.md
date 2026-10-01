@@ -1,33 +1,23 @@
 # Agent instructions
 
-Write all code comments and documentation in English.
+Write comments and documentation in English.
 
 ## Product boundary
 
-- P2P transport facade: addresses, streams, fallback and guarantees over the
-  cvln (Veilid) and ctrn (Tor) networks.
-- Offers one transport interface to `cmsg` (and the vault's device port and
-  `cdht`'s DHT capability) and chooses among backends that satisfy the
-  required guarantees.
-- Never falls back silently, never below a required guarantee (for example
-  anonymity). Every switch of the active backend must stay observable.
-- Multiplexing (`yamux`) and framing (`tokio-util` length-delimited codec)
-  happen once, here. Do not invent framing; do not add a second multiplexer.
-- Payload-agnostic. Not sync: record semantics belong to `cdht`.
-- Two licenses in this repository:
-  - `cmsh` (root crate, `src/`, `browser/`): FSL-1.1-ALv2 (own decisions:
-    policy, selection).
-  - `cmsh-api/`: LGPL-3.0-only WITH LGPL-3.0-linking-exception. The backend
-    contract that LGPL leaves implement. It must never depend on the FSL
-    crate, and must contain no policy or selection logic.
-- Commodity wrappers around established libraries belong in LGPL crates in
-  corbet-foss, not here.
+- Thin transport facade over cmsh-api, cfbk, yamux and the streams module.
+- No Tor-specific type in Mesh; only the backend interprets opaque addresses.
+- Tor is the launch backend; future Veilid is a separate implementation.
+- No application messages, delivery ACKs, credentials, storage or retry policy.
+- Reuse maintained codecs and primitives. Record candidates in README.
+- Root facade/modules are FSL; existing cmsh-api is LGPL with linking exception.
+- Streams has no final leaf name: keep it as a module here.
 
 ## Quality boundary
 
-- `cargo fmt --all --check`, `cargo clippy --workspace --all-targets
-  --all-features -- -D warnings`, `cargo test --workspace --all-features` and
-  the wasm32 builds — all green before every commit. No local workstation
-  builds; use GHA, Crow as fallback (see README, CI).
-- Behaviour changes to selection need a test in `src/tests.rs` against the
-  mock backends.
+- Current stable Rust, fmt, Clippy with warnings denied, real native tests and
+  wasm32 build plus executed identical framing vectors on GitHub Actions.
+- Do not run Cargo on the workstation. Use standalone rustfmt if needed.
+- Pin first-party git dependencies by full revision; one revision per crate.
+- Commit explicit paths in small steps; plain English imperative, no AI credit.
+- Pull with rebase before every push to main; never force push.
+- Never deploy, publish to registries or cause payments.

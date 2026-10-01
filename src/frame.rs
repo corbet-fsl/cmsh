@@ -17,19 +17,60 @@ const MALFORMED: Error = Error::new(ErrorKind::Protocol, "malformed frame");
 const CLOSED: Error = Error::new(ErrorKind::Closed, "frame codec closed");
 
 /// The length-delimited codec with a payload bound of `1..=MAX_FRAME_BYTES`.
-pub fn codec(max_frame_bytes: usize) -> Result<LengthDelimitedCodec, Error> {
+pub fn codec(max_frame_bytes: usize) -> Result<BoundedCodec, Error> {
     if max_frame_bytes == 0 || max_frame_bytes > MAX_FRAME_BYTES {
         return Err(LIMIT);
     }
-    Ok(LengthDelimitedCodec::builder()
-        .length_field_length(4)
-        .big_endian()
-        .max_frame_length(max_frame_bytes)
-        .new_codec())
+    Ok(BoundedCodec {
+        inner: LengthDelimitedCodec::builder()
+            .length_field_length(4)
+            .big_endian()
+            .max_frame_length(max_frame_bytes)
+            .new_codec(),
+        partial: false,
+    })
+}
+
+/// Maintained length codec with explicit truncated-header/payload EOF tracking.
+#[derive(Debug)]
+pub struct BoundedCodec {
+    inner: LengthDelimitedCodec,
+    partial: bool,
+}
+
+impl Decoder for BoundedCodec {
+    type Item = BytesMut;
+    type Error = std::io::Error;
+
+    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        let before = src.len();
+        let result = self.inner.decode(src)?;
+        self.partial = if result.is_some() {
+            false
+        } else {
+            self.partial || before != src.len() || !src.is_empty()
+        };
+        Ok(result)
+    }
+
+    fn decode_eof(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        let frame = self.decode(src)?;
+        if frame.is_none() && self.partial {
+            return Err(MALFORMED.into());
+        }
+        Ok(frame)
+    }
+}
+
+impl Encoder<Bytes> for BoundedCodec {
+    type Error = std::io::Error;
+    fn encode(&mut self, item: Bytes, dst: &mut BytesMut) -> Result<(), Self::Error> {
+        self.inner.encode(item, dst)
+    }
 }
 
 /// A framed byte stream: a `Sink<Bytes>` and a `Stream` of `BytesMut` frames.
-pub type Framed<S> = tokio_util::codec::Framed<Compat<S>, LengthDelimitedCodec>;
+pub type Framed<S> = tokio_util::codec::Framed<Compat<S>, BoundedCodec>;
 
 /// Frame any `futures-io` byte stream (for example a [`crate::Substream`]).
 pub fn framed<S: AsyncRead + AsyncWrite>(
@@ -46,7 +87,7 @@ pub fn framed<S: AsyncRead + AsyncWrite>(
 /// (the browser bindings). Any malformed or oversized frame closes the codec.
 #[derive(Debug)]
 pub struct FrameCodec {
-    codec: LengthDelimitedCodec,
+    codec: BoundedCodec,
     max_frame_bytes: usize,
     buffer: BytesMut,
     closed: bool,
@@ -67,6 +108,10 @@ impl FrameCodec {
     pub fn encode(&mut self, payload: &[u8]) -> Result<Vec<u8>, Error> {
         if self.closed {
             return Err(CLOSED);
+        }
+        if payload.len() > self.max_frame_bytes {
+            self.close();
+            return Err(LIMIT);
         }
         let mut wire = BytesMut::with_capacity(payload.len() + 4);
         if self
@@ -106,7 +151,7 @@ impl FrameCodec {
 
     /// End of stream: valid only between complete frames. Closes the codec.
     pub fn finish(&mut self) -> Result<(), Error> {
-        let complete = !self.closed && self.buffer.is_empty();
+        let complete = !self.closed && !self.codec.partial && self.buffer.is_empty();
         self.close();
         if complete { Ok(()) } else { Err(MALFORMED) }
     }

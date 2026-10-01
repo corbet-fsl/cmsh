@@ -27,11 +27,12 @@ mod mesh;
 pub mod mock;
 mod property;
 mod session;
+pub mod streams;
 
 #[cfg(target_arch = "wasm32")]
 pub mod browser;
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests;
 
 pub use cfbk::{Health, Switch, Unavailable};
@@ -45,7 +46,7 @@ pub use mesh::{
     MeshError,
 };
 pub use property::{Policy, Property, properties};
-pub use session::{MAX_SUBSTREAMS, Role, Session, Substream};
+pub use session::{MAX_SUBSTREAMS, Role, Session, SessionEvent, Substream};
 
 use std::future::Future;
 use std::pin::Pin;

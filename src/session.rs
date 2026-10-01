@@ -11,7 +11,10 @@ use futures::lock::Mutex;
 use futures::{SinkExt, StreamExt};
 use std::collections::VecDeque;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
 use std::task::{Context, Poll};
 
 /// Maximum concurrent substreams per connection.
@@ -30,6 +33,19 @@ pub enum Role {
     Listener,
 }
 
+/// Terminal session notification, emitted once across cloned handles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionEvent {
+    /// The driver ended or was cancelled. No message acknowledgement is implied.
+    Closed,
+}
+struct Permit(Arc<AtomicUsize>);
+impl Drop for Permit {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 enum Command {
     Open(oneshot::Sender<Result<yamux::Stream, Error>>),
     Close(oneshot::Sender<()>),
@@ -39,6 +55,8 @@ enum Command {
 #[derive(Clone)]
 pub struct Session {
     commands: mpsc::Sender<Command>,
+    pending: Arc<AtomicUsize>,
+    events: Arc<Mutex<mpsc::Receiver<SessionEvent>>>,
     inbound: Arc<Mutex<mpsc::Receiver<yamux::Stream>>>,
 }
 
@@ -54,7 +72,9 @@ impl Session {
         };
         let (commands, command_receiver) = mpsc::channel(8);
         let (inbound_sender, inbound) = mpsc::channel(INBOUND_QUEUE);
+        let (event_sender, events) = mpsc::channel(1);
         let mut driver = Driver {
+            event: Some(event_sender),
             connection: yamux::Connection::new(io, config, mode),
             commands: command_receiver,
             commands_done: false,
@@ -64,6 +84,8 @@ impl Session {
         };
         let session = Self {
             commands,
+            pending: Arc::new(AtomicUsize::new(0)),
+            events: Arc::new(Mutex::new(events)),
             inbound: Arc::new(Mutex::new(inbound)),
         };
         (
@@ -72,8 +94,32 @@ impl Session {
         )
     }
 
+    /// Receive the terminal event once; subsequent calls return None.
+    /// Cancelled waits leave the event available for the next caller.
+    pub async fn next_event(&self) -> Option<SessionEvent> {
+        self.events.lock().await.next().await
+    }
+    fn permit(&self) -> Result<Permit, Error> {
+        // compare_exchange avoids assuming a particular async runtime semaphore.
+        let mut count = self.pending.load(Ordering::SeqCst);
+        loop {
+            if count >= MAX_SUBSTREAMS {
+                return Err(Error::new(ErrorKind::Limit, "session busy"));
+            }
+            match self.pending.compare_exchange(
+                count,
+                count + 1,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(_) => return Ok(Permit(self.pending.clone())),
+                Err(value) => count = value,
+            }
+        }
+    }
     /// Open a new outbound substream.
     pub async fn open(&self) -> Result<Substream, Error> {
+        let _permit = self.permit()?;
         let (reply, response) = oneshot::channel();
         self.commands
             .clone()
@@ -91,6 +137,7 @@ impl Session {
 
     /// Close the session and wait until the close is sent.
     pub async fn close(&self) -> Result<(), Error> {
+        let _permit = self.permit()?;
         let (reply, done) = oneshot::channel();
         self.commands
             .clone()
@@ -102,6 +149,7 @@ impl Session {
 }
 
 struct Driver {
+    event: Option<mpsc::Sender<SessionEvent>>,
     connection: yamux::Connection<BoxStream>,
     commands: mpsc::Receiver<Command>,
     commands_done: bool,
@@ -113,9 +161,16 @@ struct Driver {
 impl Driver {
     fn poll(&mut self, cx: &mut Context<'_>) -> Poll<()> {
         loop {
+            self.opening.retain(|reply| !reply.is_canceled());
             while !self.commands_done {
                 match self.commands.poll_next_unpin(cx) {
-                    Poll::Ready(Some(Command::Open(reply))) => self.opening.push_back(reply),
+                    Poll::Ready(Some(Command::Open(reply))) => {
+                        if self.opening.len() < MAX_SUBSTREAMS {
+                            self.opening.push_back(reply);
+                        } else {
+                            let _ = reply.send(Err(Error::new(ErrorKind::Limit, "session busy")));
+                        }
+                    }
                     Poll::Ready(Some(Command::Close(reply))) => self.closing.push(reply),
                     // Every handle is gone: nobody can use the session any more.
                     Poll::Ready(None) => self.commands_done = true,
@@ -168,6 +223,9 @@ impl Driver {
     }
 
     fn finish(&mut self) {
+        if let Some(mut event) = self.event.take() {
+            let _ = event.try_send(SessionEvent::Closed);
+        }
         for reply in self.opening.drain(..) {
             let _ = reply.send(Err(CLOSED));
         }
@@ -175,6 +233,12 @@ impl Driver {
             let _ = reply.send(());
         }
         self.inbound.close_channel();
+    }
+}
+
+impl Drop for Driver {
+    fn drop(&mut self) {
+        self.finish();
     }
 }
 

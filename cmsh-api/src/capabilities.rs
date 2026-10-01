@@ -20,8 +20,9 @@ impl LatencyClass {
 /// as far as it trusts the backend code; it checks the hooks for consistency.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Capabilities {
-    /// Neither side learns the other's network location (IP address), and the
-    /// network operators cannot link the two ends.
+    /// The backend hides network locations from peers under its documented
+    /// threat model. This is not resistance to global timing correlation, nor
+    /// a claim that different anonymity networks offer equivalent protection.
     pub anonymous: bool,
     /// Unreliable datagrams via [`crate::Backend::datagrams`].
     pub datagrams: bool,
