@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         ref: ${{ github.event.pull_request.head.sha || github.sha }}
         persist-credentials: false
@@ -26,7 +26,7 @@ jobs:
         date -u +%FT%TZ >> resolver.txt
 
         sha256sum Cargo.lock >> resolver.txt'
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         name: resolved-lock
         path: 'Cargo.lock
@@ -37,11 +37,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         ref: ${{ github.event.pull_request.head.sha || github.sha }}
         persist-credentials: false
-    - uses: actions/download-artifact@v4
+    - uses: actions/download-artifact@v8
       with:
         name: resolved-lock
     - uses: dtolnay/rust-toolchain@stable
@@ -88,7 +88,7 @@ jobs:
       env:
         CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER: wasm-bindgen-test-runner
       run: cargo test --locked --all-features --target wasm32-unknown-unknown --test contracts --test tor_port
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       if: always()
       with:
         name: dependency-lock
@@ -105,11 +105,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         ref: ${{ github.event.pull_request.head.sha || github.sha }}
         persist-credentials: false
-    - uses: actions/download-artifact@v4
+    - uses: actions/download-artifact@v8
       with:
         name: resolved-lock
     - run: python3 .github/check-first-party.py
@@ -120,11 +120,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         ref: ${{ github.event.pull_request.head.sha || github.sha }}
         persist-credentials: false
-    - uses: actions/download-artifact@v4
+    - uses: actions/download-artifact@v8
       with:
         name: resolved-lock
     - uses: dtolnay/rust-toolchain@nightly
@@ -148,7 +148,7 @@ jobs:
         cargo llvm-cov report --branch --ignore-filename-regex ''/tests/'' --text --output-path coverage.txt'
     - name: Require complete line and branch coverage
       run: python3 .github/test-source-coverage.py && python3 .github/check-source-coverage.py coverage.lcov coverage.json coverage.txt
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       if: always()
       with:
         name: coverage
