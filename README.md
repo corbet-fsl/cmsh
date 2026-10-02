@@ -17,27 +17,25 @@ API, bounds, failure semantics and verification: [contract](docs/CONTRACT.md).
 
 ## Scope
 
-**Purpose.** A network-independent, bounded-message facade shaped like Veilid's
-`app_message` and `app_call`, with Tor at launch and Veilid separately qualified.
+### Purpose
 
-**Owns.** Backend registration, coarse health/capability reports, complete messages,
-one-use call replies and listeners. Pass minimum guarantees and consumer needs to
-Fallback (`cfbk`), always requiring anonymity.
+cmsh is how bytes travel between members: a network-independent bounded-message interface over two full backends, with network choice executed by cfbk.
 
-**Never.** Expose byte streams, framing, raw signing keys or Tor-specific member
-API; select direct transport; add a second fallback policy engine; discover peers;
-store messages; replay an uncertain send or split one connection across networks.
+### Owns
 
-**States and ports.** Readiness derives from backend health. Upward: `app_message`,
-`app_call`, `listen`, `status`, `take_switches`; listener events are Message, Call
-with Reply, and ListenerClosed. Downward: `ctrn`, qualified `cvln`, and `cfbk`.
-Payloads are opaque, preserving a path for future voice support.
+The message ports (send one bounded message, one bounded call with a one-use reply, listen); backend registration for ctrn (Tor) and cvln (Veilid) with coarse health and capability reporting; passing minimum and consumer requirements to cfbk while always requiring anonymity; a payload-agnostic shape that keeps later datagrams and voice possible.
 
-**Invariants and tests.** No silent downgrade, direct fallback or false delivery ACK.
-Bounds are checked before I/O and replies inherit the advertised limit. Real
-Ferry/native/Wasm vectors cover selection, refusal, cancellation and listener
-cleanup; real Tor/browser integration is independently gated in `ctrn`. Disabled
-or unready backends are not selectable. Source line and branch gates target 100%.
+### Never
+
+Assume anything Tor-specific in its interface; expose raw streams, framing, or signing keys; fall back to direct transport, silently or forcibly downgrade, run one connection over two networks, or claim Tor and Veilid have equal anonymity; keep a second fallback policy engine, application retries, discovery, keys, or message storage; replay an uncertain send on another backend.
+
+### States
+
+Starting, Available for the selected backend, Unavailable, and Stopped, derived from backend health; Tor is the only selectable backend at the first milestone.
+
+### Test obligations
+
+Real Tor round trips through the message interface; selection and error tests proving required properties are never relaxed and that a disabled or unready backend cannot be selected; backend loss reported exactly once with no false acknowledgement; oversized payloads refused before I/O; listener cleanup on failure. Shared obligations: current stable Rust with native and Wasm builds using identical vectors; explicit state machine with injected clock, randomness, storage, and network; thin facade with no duplicate state, crypto, retry, or roster logic; full line and branch coverage with real round trips and injected delay, loss, duplication, cancellation, corruption, and conflicts; bounded bytes, queues, and work with no secrets or identifiers in errors; isolation of keys, identities, sessions, and stores per community; reuse of maintained third-party code with no own crypto.
 
 ## Reuse and validation
 
