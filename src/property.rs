@@ -8,7 +8,9 @@ use std::collections::BTreeSet;
 /// Latency is expressed as monotone flags: a backend of class `c` offers
 /// `LatencyWithin(d)` for every class `d` at least as slow as `c`, so a
 /// requirement "at most interactive" is a plain set inclusion.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, schemars::JsonSchema,
+)]
 pub enum Property {
     /// Location privacy for both ends.
     Anonymous,
