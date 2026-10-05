@@ -1,0 +1,113 @@
+name: public-browser-tor
+on:
+  push:
+    branches: [research/public-browser-tor]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: public-browser-tor
+  cancel-in-progress: false
+env:
+  CARGO_BUILD_JOBS: 2
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_TERM_COLOR: always
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+  CTRN_COMMIT: 53d481d244cc1e955bd7471808021774e42b5ba2
+  NATIVE_INPUTS: 54571dbe889fc1bb20183898ae78eb9f8b7661cf
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        persist-credentials: false
+    - name: Unpack ctrn and redirect cfry to its bundle
+      run: |
+        git clone -q research/public-browser-tor/ctrn.bundle ctrn-src
+        git -C ctrn-src checkout -q "$CTRN_COMMIT"
+        git clone -q --mirror research/public-browser-tor/cfry.bundle "$RUNNER_TEMP/cfry.git"
+        git config --global url."file://$RUNNER_TEMP/cfry.git".insteadOf https://github.com/corbet-foss/cfry.git
+        git config --global --add url."file://$RUNNER_TEMP/cfry.git".insteadOf https://github.com/corbet-foss/cfry
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+    - name: Validate then resolve one reproducible snapshot
+      working-directory: ctrn-src
+      run: |
+        python3 .github/check-first-party.py
+        bash .ci/resolve.sh
+        python3 .github/check-first-party.py
+        rustc --version > public-resolver.txt
+        cargo --version >> public-resolver.txt
+        sha256sum Cargo.lock >> public-resolver.txt
+    - name: Keep the already tested native inputs unchanged
+      working-directory: ctrn-src
+      run: git diff --exit-code "$NATIVE_INPUTS" -- Cargo.toml src examples/public_network.rs
+    - uses: actions/upload-artifact@v7
+      with:
+        name: public-resolved-lock
+        path: |
+          ctrn-src/Cargo.lock
+          ctrn-src/cfry-Cargo.lock
+          ctrn-src/public-resolver.txt
+  public-browser:
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        persist-credentials: false
+    - name: Unpack ctrn and redirect cfry to its bundle
+      run: |
+        git clone -q research/public-browser-tor/ctrn.bundle ctrn-src
+        git -C ctrn-src checkout -q "$CTRN_COMMIT"
+        git clone -q --mirror research/public-browser-tor/cfry.bundle "$RUNNER_TEMP/cfry.git"
+        git config --global url."file://$RUNNER_TEMP/cfry.git".insteadOf https://github.com/corbet-foss/cfry.git
+        git config --global --add url."file://$RUNNER_TEMP/cfry.git".insteadOf https://github.com/corbet-foss/cfry
+    - uses: actions/download-artifact@v8
+      with:
+        name: public-resolved-lock
+        path: ctrn-src
+    - uses: actions/setup-node@v7
+      with:
+        node-version: 22
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: wasm32-unknown-unknown
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: ctrn-src
+        cache-on-failure: true
+    - uses: actions/cache@v6
+      with:
+        path: ${{ runner.temp }}/torjs-target
+        key: browser-torjs-65bb21d-arti-2be5b51-v1
+    - working-directory: ctrn-src
+      run: python3 .github/check-first-party.py
+    - name: Build the production browser service stage
+      working-directory: ctrn-src
+      env:
+        TOR_BROWSER_STAGE: service
+      run: bash .ci/browser-build.sh
+    - name: Actual HTTPS browser over public Tor
+      working-directory: ctrn-src
+      run: |
+        openssl req -x509 -newkey rsa:2048 -nodes -keyout "$RUNNER_TEMP/https.key" -out "$RUNNER_TEMP/https.pem" -days 1 -subj '/CN=localhost' -addext 'subjectAltName=IP:127.0.0.1' 2>/dev/null
+        export HTTPS_KEY="$RUNNER_TEMP/https.key" HTTPS_CERT="$RUNNER_TEMP/https.pem"
+        export BROWSER_BIN="$(command -v google-chrome)"
+        export CI_COMMIT_SHA="$CTRN_COMMIT"
+        export PUBLIC_BROWSER_EVIDENCE="$RUNNER_TEMP/public-browser-evidence"
+        python3 .ci/public-browser.py
+    - uses: actions/upload-artifact@v7
+      if: always()
+      with:
+        name: public-browser-evidence
+        path: |
+          ${{ runner.temp }}/public-browser-evidence
+          ctrn-src/Cargo.lock
+          ctrn-src/cfry-Cargo.lock
+          ctrn-src/public-resolver.txt
+        retention-days: 7
