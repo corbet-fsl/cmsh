@@ -1,0 +1,96 @@
+schema = 1
+
+# Frozen nine-onion inputs for the v01-tor-live workflow only. The dispatch
+# helper never builds these (it reads `.ci/archives.toml` alone); the Rust
+# job resolves each path from its Crow variable (or the committed default)
+# and verifies it against the committed digest before any use. Ambient tool
+# paths are referenced in place, never copied, so Nix runtime closures stay
+# valid. Frozen driver scripts come from the verified root archive below.
+# Product pins are unchanged and no shims are added.
+
+[live-inputs.v01-source-bundle]
+archive_variable = "V01_SOURCE_BUNDLE"
+digest_variable = "V01_SOURCE_BUNDLE_SHA256"
+sha256 = "a89129a0f4e827c807f1453ef40c5968d1a063267d4be8741783abdaa31e82b6"
+default_path = "/workspaces/ci-sources/v01-tor-records/a89129a0f4e827c807f1453ef40c5968d1a063267d4be8741783abdaa31e82b6.tar"
+workflows = ["v01-tor-live"]
+
+[live-inputs.v01-chutney]
+archive_variable = "V01_CHUTNEY_SOURCE_ARCHIVE"
+digest_variable = "V01_CHUTNEY_SOURCE_SHA256"
+sha256 = "3d8748142f5d1fc3243371b33ff5a431d444c69b836d22718898f1787eec00ee"
+default_path = "/workspaces/ci-sources/10-source-chutney/3d8748142f5d1fc3243371b33ff5a431d444c69b836d22718898f1787eec00ee.tar"
+workflows = ["v01-tor-live"]
+
+[live-inputs.v01-root-source]
+archive_variable = "V01_ROOT_SOURCE_ARCHIVE"
+digest_variable = "V01_ROOT_SOURCE_SHA256"
+sha256 = "a84b41fcf68d71507db9e46072c3c329ec1b2667114c38fe3ff275bd7ab6cb1d"
+default_path = "/workspaces/ci-sources/146/a84b41fcf68d71507db9e46072c3c329ec1b2667114c38fe3ff275bd7ab6cb1d.tar"
+commit = "bb0f72d89dbfc5323580205740139fc84cc7a284"
+workflows = ["v01-tor-live"]
+
+[live-tools.receipt]
+path = "/workspaces/component-releases/cmsg/20a55ac8159811bbac7c8370ae7f28fc075f2153/tor-tools/tools.json"
+sha256 = "b3a64bbc373b886dc164e859c1d26e7a4055a7d65b8c2556a0bd2cff4ac152e0"
+
+[live-tools.tor]
+path = "/workspaces/component-tools/cmsg/tor-0.4.9.12-20a55ac8159811bbac7c8370ae7f28fc075f2153/bin/tor"
+sha256 = "3b03c797db84b76bcde96f68997656cc42368b173c0da88b40d5acc2d666cc1b"
+
+[live-tools.tor-gencert]
+path = "/workspaces/component-tools/cmsg/tor-0.4.9.12-20a55ac8159811bbac7c8370ae7f28fc075f2153/bin/tor-gencert"
+sha256 = "68df7a29ae0bed669df63b4c8d8658240cb951618860623212fdbd8993923114"
+
+[live-tools.python]
+path = "/workspaces/component-tools/cmsg/python-20a55ac8159811bbac7c8370ae7f28fc075f2153/bin/python"
+sha256 = "f5cce9ecc914b0c2eee78056c1c816aa02ae4c73c0aaf958eb5e0bb9281f34ea"
+
+[live-drivers.harness]
+file = ".ci/v01-tor-live.py"
+sha256 = "20314ee07fc2adaae05c4018268abec49865c2a78e0710519fa55de0b1c5cc5b"
+
+[live-drivers.components]
+file = ".ci/v01-tor-records.py"
+sha256 = "6ad575e38543b9668379894ca8752361aa4b76bc28b66cf69a7c6b66fa4a9e22"
+
+[live-drivers.helpers]
+file = ".ci/v01-records.py"
+sha256 = "64796854b4d018d455b06d3ac67db5cc78a3058440c758a1161fb52d7f7e7e0a"
+
+[live-tools.rustc]
+path = "/nix/store/vy0xilifxb02fwal0wihsrwc8s69rlyk-rustc-wrapper-1.98.1/bin/rustc"
+sha256 = "8f40f2f394f7ff470ccfac7da1f03661756216a77fdb3181bfb81bbf01e07cdb"
+
+[live-tools.cargo]
+path = "/nix/store/w20n3pmhhd1av9llykxa3gd21c9jsm8l-cargo-1.98.1/bin/cargo"
+sha256 = "88a18d3c29700de42bc2a2f5590e919e36557964cf4e1dd2f60f892376f6c102"
+
+[live-tools.rustdoc]
+path = "/nix/store/vy0xilifxb02fwal0wihsrwc8s69rlyk-rustc-wrapper-1.98.1/bin/rustdoc"
+sha256 = "999b2098594b2b8d91db71e11bfbb2c0bd8cf24acac792308ac08c267f813bcb"
+
+[live-tools.rustfmt]
+path = "/nix/store/jpcqlbhkwxwvq507mq0hkacpxbxcdwjj-rustfmt-1.98.1/bin/rustfmt"
+sha256 = "9fc2eff4ce7281f2a77c0164ab8e8b55fcef98f3c8ba96d4e4179ba8f3abc7fd"
+
+[live-tools.cargo-clippy]
+path = "/nix/store/n88pdyarvdpyw98fahxcb03733nsclhq-clippy-1.98.1/bin/cargo-clippy"
+sha256 = "4396915d16e54967584fb1730560ca5c92bbea823398a8749c1e05109ad8e39c"
+
+[live-tools.clippy-driver]
+path = "/nix/store/n88pdyarvdpyw98fahxcb03733nsclhq-clippy-1.98.1/bin/clippy-driver"
+sha256 = "0616995d944bbdd0b2bc9aee822d4a0cb07b05f8eabf01367a67fc94de05089f"
+
+[live-tools.wasm-libcore]
+path = "/nix/store/xvp6nfxayb07si2jaggqwvx3iykw89g2-rustc-1.98.1/lib/rustlib/wasm32-unknown-unknown/lib/libcore-e6b063672db74229.rlib"
+sha256 = "e917c01a724e0622601835f8a6f1c8bff102f5f40a61152ce95a099a4bc7ba61"
+
+[live-tools.wasm-libstd]
+path = "/nix/store/xvp6nfxayb07si2jaggqwvx3iykw89g2-rustc-1.98.1/lib/rustlib/wasm32-unknown-unknown/lib/libstd-0d5130a4ee2cc288.rlib"
+sha256 = "61ce675fface73dbbf431603767a3aa7f05bf9d6995d0555855fa5e4ead667e6"
+
+[diag.discovery-lib]
+file = "src/tor_discovery.rs"
+sha256 = "fc6c8db74254e6246bb6da69228e4afe2c17ff42575133bb3ab1b530d2c30041"
+diagnostic_sha256 = "f67ec53ed7f19e9bf7293eca631a24687b14fc2558109269edcbd901fade91d7"

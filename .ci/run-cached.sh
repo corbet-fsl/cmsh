@@ -5,10 +5,8 @@ set -euo pipefail
 : "${CI_COMMIT_SHA:?Missing verified source revision}"
 : "${CI_REPOSITORY_URL:?Missing canonical repository identity}"
 : "${CHECKS:?Missing declared check selection}"
-if [ "$CHECKS" != "verify" ]; then
-  echo "CHECKS must be exactly 'verify', got: $CHECKS" >&2
-  exit 2
-fi
+# CHECKS is the manifest job selection, validated by ccid against the
+# manifest; fresh milestone jobs route through `ccid check` below.
 cache_root=${CI_CACHE_ROOT:-${CARGO_HOME:-}}
 [[ $cache_root = /* ]] || { echo 'An absolute persistent CI_CACHE_ROOT or CARGO_HOME is required' >&2; exit 2; }
 namespace=$(printf '%s' "$CI_REPOSITORY_URL" | sha256sum | cut -c1-24)
@@ -55,6 +53,24 @@ export GIT_CONFIG_VALUE_1='https://github.com/corbet-foss/'
 if [ -n "${HOME:-}" ]; then
   mkdir -p "$state/ctrn-tools" "$HOME/.cache"
   if [ ! -e "$HOME/.cache/ctrn-tools" ]; then ln -s "$state/ctrn-tools" "$HOME/.cache/ctrn-tools"; fi
+  # A persisted venv bakes absolute paths at creation: pip's shebang points at
+  # the creating job's python, which vanishes with old job HOMEs (bad
+  # interpreter). python3 itself is usually a symlink to a live base python,
+  # so its executability proves nothing — read pip's shebang instead. Operate
+  # only on the owned state dir (the HOME link must canonicalize to it; a
+  # venv that is itself a symlink is refused), under the held state lock
+  # above. No HOME/credential moves, no other jobs touched.
+  ctrn_cache="$HOME/.cache/ctrn-tools"
+  if [ -L "$ctrn_cache" ] && [ "$(readlink -m "$ctrn_cache")" = "$(readlink -m "$state/ctrn-tools")" ] \
+    && [ -f "$state/ctrn-tools/venv/bin/pip" ] && [ ! -L "$state/ctrn-tools/venv" ]; then
+    pip_stale=0
+    pip_shebang=$(head -n 1 "$state/ctrn-tools/venv/bin/pip")
+    case "$pip_shebang" in "#!"*) pip_interp=${pip_shebang#"#!"}; pip_interp=${pip_interp%%[[:space:]]*}; [ -n "$pip_interp" ] && [ -x "$pip_interp" ] || pip_stale=1;; *) pip_stale=1;; esac
+    [ -x "$state/ctrn-tools/venv/bin/python3" ] || pip_stale=1
+    if [ "$pip_stale" = 1 ]; then
+      rm -rf "$state/ctrn-tools/venv"
+    fi
+  fi
 fi
 # Shared-first toolchain lock: jobs share a provisioned toolchain and take
 # exclusive only to provision missing pieces. Same lock file, so old
@@ -87,4 +103,21 @@ rustup run nightly rustc -vV
 rustup run nightly cargo llvm-cov --version
 # rusqlite links the system SQLite (non-bundled via tor-dirmgr); execute the
 # check inside the pinned shell (same cmty pattern, sqlite instead of openssl).
-nix-shell .ci/check-shell.nix --run 'export PATH="$(dirname "$CCID_BIN"):$PATH"; set -e; "$CCID_BIN" cached --repo "$PWD" --check verify; test -s ".ccid/results/verify.jsonl"'
+# nix-shell resolves its --run shell via <nixpkgs>.bashInteractive from ambient
+# NIX_PATH, which deterministic workers lack; pin it explicitly from the same
+# tool closure so the shell is deterministic (check-shell inputs, tool pin,
+# workflows and gates unchanged).
+NIX_BUILD_SHELL=""
+for out in $(nix build --no-link --print-out-paths "$tool_source#bashInteractive"); do
+  if [ -x "$out/bin/bash" ]; then NIX_BUILD_SHELL="$out/bin/bash"; fi
+done
+test -n "$NIX_BUILD_SHELL" || { echo 'pinned bashInteractive provides no bin/bash' >&2; exit 2; }
+export NIX_BUILD_SHELL
+if [ "$CHECKS" = "verify" ]; then
+  nix-shell .ci/check-shell.nix --run 'export PATH="$(dirname "$CCID_BIN"):$PATH"; set -e; "$CCID_BIN" cached --repo "$PWD" --check verify; test -s ".ccid/results/verify.jsonl"'
+else
+  # The milestone Records job executes fresh on every dispatch: live-network
+  # evidence must never be restored from a result cache. Warm compile caches
+  # still apply through the shared target lock; the exit status is the result.
+  nix-shell .ci/check-shell.nix --run 'export PATH="$(dirname "$CCID_BIN"):$PATH"; set -e; "$CCID_BIN" check --repo "$PWD" --check "$CHECKS"'
+fi

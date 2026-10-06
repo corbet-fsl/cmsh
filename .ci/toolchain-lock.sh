@@ -47,6 +47,30 @@ TOOLCHAIN_WASM_TARGETS="${TOOLCHAIN_WASM_TARGETS:-}"
 
 _tc_rustup() { "$CARGO_HOME/bin/rustup" "$@"; }
 
+# rustup refuses installs/updates when $HOME differs from the euid home.
+# Run each install/update with HOME set to the euid home for that command
+# only; both roots stay explicit and absolute, parent env is unchanged, and
+# a failed lookup fails closed instead of using the mismatched HOME.
+_tc_euid_home() {
+  local h
+  h=$(getent passwd "$(id -u)" 2>/dev/null | cut -d: -f6) || { echo 'toolchain-lock: cannot resolve euid home (getent failed)' >&2; return 1; }
+  [[ -n $h ]] || { echo 'toolchain-lock: cannot resolve euid home (empty entry)' >&2; return 1; }
+  printf '%s' "$h"
+}
+
+_tc_run_install() { # <cmd...>: run one mutating install/update with euid HOME
+  [[ ${CARGO_HOME:-} = /* ]] || { echo 'toolchain-lock: CARGO_HOME must be absolute' >&2; return 1; }
+  [[ ${RUSTUP_HOME:-} = /* ]] || { echo 'toolchain-lock: RUSTUP_HOME must be absolute' >&2; return 1; }
+  local eh
+  eh=$(_tc_euid_home) || return 1
+  if [[ $eh != "${HOME:-}" ]]; then
+    HOME="$eh" "$@" || return 1
+  else
+    "$@" || return 1
+  fi
+  return 0
+}
+
 # --- readiness probes (read-only; safe under shared) ---
 tc_stable_ready() {
   _tc_rustup run stable rustc --version >/dev/null 2>&1 || return 1
@@ -125,25 +149,25 @@ toolchain_install() {
   # install may provide a bare compiler without rustfmt/clippy, and
   # tc_stable_ready demands both. Never a reinstall — adds only.
   if ! _tc_rustup run stable rustc --version >/dev/null 2>&1; then
-    proto install rust stable || return 1
+    _tc_run_install proto install rust stable || return 1
   fi
   stable_comps=$(_tc_rustup component list --toolchain stable --installed 2>/dev/null) || return 1
   if ! grep -q '^rustfmt' <<<"$stable_comps"; then
-    _tc_rustup component add rustfmt --toolchain stable || return 1
+    _tc_run_install "$CARGO_HOME/bin/rustup" component add rustfmt --toolchain stable || return 1
   fi
   if ! grep -q '^clippy' <<<"$stable_comps"; then
-    _tc_rustup component add clippy --toolchain stable || return 1
+    _tc_run_install "$CARGO_HOME/bin/rustup" component add clippy --toolchain stable || return 1
   fi
   if [[ $TOOLCHAIN_WANT_NIGHTLY == 1 ]]; then
     if ! _tc_rustup run nightly rustc --version >/dev/null 2>&1; then
-      _tc_rustup toolchain install nightly --component llvm-tools-preview || return 1
+      _tc_run_install "$CARGO_HOME/bin/rustup" toolchain install nightly --component llvm-tools-preview || return 1
     else
       local comps
       comps=$(_tc_rustup component list --toolchain nightly --installed 2>/dev/null) || return 1
       if ! _tc_has_llvm_tools "$comps"; then
         # Alias accepted by rustup; installs the component list reports as
         # llvm-tools-<target> on current toolchains.
-        _tc_rustup component add llvm-tools-preview --toolchain nightly || return 1
+        _tc_run_install "$CARGO_HOME/bin/rustup" component add llvm-tools-preview --toolchain nightly || return 1
       fi
     fi
   fi
@@ -153,7 +177,7 @@ toolchain_install() {
     tgt=${pair#*:}
     tgts=$(_tc_rustup target list --toolchain "$tc" --installed 2>/dev/null) || return 1
     if ! grep -q "^$tgt" <<<"$tgts"; then
-      _tc_rustup target add "$tgt" --toolchain "$tc" || return 1
+      _tc_run_install "$CARGO_HOME/bin/rustup" target add "$tgt" --toolchain "$tc" || return 1
     fi
   done
   return 0
@@ -163,11 +187,11 @@ toolchain_ensure() {
   : "${TOOLCHAIN_LOCK_FILE:?TOOLCHAIN_LOCK_FILE must be set to \$toolchains/install.lock}"
   local round=0
   exec 7>"$TOOLCHAIN_LOCK_FILE.gate" || return 1
-  exec 8>"$TOOLCHAIN_LOCK_FILE" || { exec 7>&- 2>/dev/null || true; return 1; }
+  exec 8>"$TOOLCHAIN_LOCK_FILE" || { exec 7>&- || true; return 1; }
   # Admission gate first (exclusive, normally uncontended). A writer that
   # finds state missing keeps it while taking main exclusive, so readers
   # arriving later queue here instead of starving the writer.
-  flock -x -w "$TOOLCHAIN_LOCK_TIMEOUT" 7 || { exec 7>&- 8>&- 2>/dev/null || true; return 1; }
+  flock -x -w "$TOOLCHAIN_LOCK_TIMEOUT" 7 || { exec 7>&- 8>&- || true; return 1; }
   _TOOLCHAIN_GATE_HELD=1
   while (( round < _TOOLCHAIN_MAX_ROUNDS )); do
     round=$((round + 1))
@@ -204,7 +228,7 @@ toolchain_ensure() {
 _toolchain_ensure_fail() {
   flock -u 8 2>/dev/null || true
   _toolchain_gate_release
-  exec 8>&- 2>/dev/null || true
+  exec 8>&- || true
 }
 
 # Gate release is flag-guarded: exactly once per toolchain_ensure, so a
@@ -214,14 +238,14 @@ _toolchain_gate_release() {
   if (( _TOOLCHAIN_GATE_HELD )); then
     _TOOLCHAIN_GATE_HELD=0
     flock -u 7 2>/dev/null || true
-    exec 7>&- 2>/dev/null || true
+    exec 7>&- || true
   fi
 }
 
 toolchain_release() {
   _toolchain_gate_release
   flock -u 8 2>/dev/null || true
-  exec 8>&- 2>/dev/null || true
+  exec 8>&- || true
 }
 
 # Per-repo cargo-installed helper (runs under the per-repo fd 9 lock, AFTER

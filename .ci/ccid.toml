@@ -8,11 +8,31 @@ cache_tools = [["rustc", "-vV"], ["cargo", "--version"], ["rustup", "run", "nigh
 cache_env = ["PKG_CONFIG_PATH", "NIX_CFLAGS_COMPILE", "NIX_LDFLAGS", "LD_LIBRARY_PATH"]
 cache_outputs = ["coverage.json", "coverage.lcov", "coverage.txt", "dependency-metadata.json", "records-metadata.json"]
 
+[checks.records]
+kind = "commands"
+commands = [["ccid", "tor", "records"]]
+
+[checks.v01-tor-live]
+kind = "commands"
+commands = [["ccid", "tor", "v01-tor-live"]]
+
 [render]
-tool_revision = "81ebac8e86e20bc93b69d5e912bbcb0c0d036d58"
+tool_revision = "c813b7c584c41e21d54bac3a9f61af5d3ef63024"
 
 [jobs.verify]
 scheduler = "crow"
 checks = ["verify"]
 workflow = "repository-jobs"
+command = ["bash", ".ci/run-cached.sh"]
+
+[jobs.records]
+scheduler = "crow"
+checks = ["records"]
+workflow = "tor-records"
+command = ["bash", ".ci/run-cached.sh"]
+
+[jobs.v01-tor-live]
+scheduler = "crow"
+checks = ["v01-tor-live"]
+workflow = "v01-tor-live"
 command = ["bash", ".ci/run-cached.sh"]

@@ -1,9 +1,33 @@
 {
   "schema": 1,
   "generator": "ccid render v1",
-  "tool_revision": "81ebac8e86e20bc93b69d5e912bbcb0c0d036d58",
-  "manifest_sha256": "7a433d684712d7b846d63e421950e488f2bfc3a1b0d57c50c38d7e5e1f4ee70b",
+  "tool_revision": "c813b7c584c41e21d54bac3a9f61af5d3ef63024",
+  "manifest_sha256": "e5627c90930712c4ead1cfb2d99bb64b4d3c8054c532dbab5af5803961c36205",
   "jobs": {
+    "records": {
+      "job": "records",
+      "scheduler": "crow",
+      "checks": [
+        "records"
+      ],
+      "workflow": "tor-records",
+      "command": [
+        "bash",
+        ".ci/run-cached.sh"
+      ]
+    },
+    "v01-tor-live": {
+      "job": "v01-tor-live",
+      "scheduler": "crow",
+      "checks": [
+        "v01-tor-live"
+      ],
+      "workflow": "v01-tor-live",
+      "command": [
+        "bash",
+        ".ci/run-cached.sh"
+      ]
+    },
     "verify": {
       "job": "verify",
       "scheduler": "crow",

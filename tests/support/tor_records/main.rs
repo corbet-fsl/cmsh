@@ -59,7 +59,14 @@ async fn participant(base: &Path, index: u8, config: &serde_json::Value) -> Part
         )
         .unwrap(),
     );
-    node.start().await.unwrap();
+    if let Err(error) = node.start().await {
+        eprintln!(
+            "private Records startup failed phase=start participant={index} kind={:?} context={}",
+            error.kind(),
+            error.context()
+        );
+        panic!("private Records startup failed phase=start participant={index}");
+    }
     let spawn = Arc::new(|f: cmsh::BoxFuture<'static, ()>| {
         tokio::spawn(f);
     });

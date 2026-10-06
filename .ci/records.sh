@@ -22,4 +22,10 @@ export TOR_BIN="$HOME/.cache/ctrn-tools/bin/tor"
 export TOR_GENCERT_BIN="$HOME/.cache/ctrn-tools/bin/tor-gencert"
 export TOR_PROBE_BIN="$record_target/debug/examples/tor_records"
 export TOR_ARTIFACT="$RUNNER_TEMP/records-tor-evidence"
-"$HOME/.cache/ctrn-tools/venv/bin/python" "$transport_source/.ci/private-network.py"
+if "$HOME/.cache/ctrn-tools/venv/bin/python" "$transport_source/.ci/private-network.py"; then
+  echo 'records: private-network gate passed'
+else
+  rc=$?
+  echo "records: private-network gate failed with exit $rc after teardown (reason inside transport fixture)" >&2
+  exit "$rc"
+fi

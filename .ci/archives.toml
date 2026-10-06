@@ -1,0 +1,14 @@
+schema = 1
+
+# Exact auxiliary tooling source for the tor-records workflow only. The live
+# fixture and probe stay lock-resolved (pinned ctrn via cargo metadata); only
+# the tool SETUP comes from this reviewed main revision, because the pinned
+# ctrn tor-tools.sh predates the Crow branch (unconditional `sudo apt-get`).
+# Product pins are unchanged and no shims are added.
+# Fetch into the dispatching checkout before dispatch:
+#   git fetch https://git.corbet.ch/corbet-foss/ctrn.git 4d40c40a365803be7ec3cec21899d0440dddd53e
+[archives.ctrn-tooling]
+revision = "4d40c40a365803be7ec3cec21899d0440dddd53e"
+archive_variable = "CTRN_TOOLING_SOURCE_ARCHIVE"
+digest_variable = "CTRN_TOOLING_SOURCE_SHA256"
+workflows = ["tor-records"]
