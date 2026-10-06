@@ -172,7 +172,12 @@ async fn actual_frames_remain_below_the_public_message_api() {
     let (a, b) = pair("fixture", true);
     let ma = mesh(vec![a.clone()]);
     let mb = mesh(vec![b.clone()]);
+    assert!(mb.view()[0].reported_healthy);
+    assert_eq!(mb.view()[0].live_listeners, 0);
+    mb.report(&b.scheme(), Health::Healthy).unwrap();
+    assert_eq!(mb.view()[0].live_listeners, 0);
     let mut listening = mb.listen().await.unwrap();
+    assert_eq!(mb.view()[0].live_listeners, 1);
     let receive = async {
         let Some(Incoming::Message { backend, payload }) = listening.next().await else {
             panic!("message")
@@ -208,8 +213,21 @@ async fn actual_frames_remain_below_the_public_message_api() {
         Some(Incoming::ListenerClosed(_, ErrorKind::Closed))
     ));
     assert!(listening.next().await.is_none());
+    assert_eq!(mb.view()[0].live_listeners, 0);
     listening.close();
     assert!(listening.addresses().is_empty());
+}
+#[cfg_attr(not(target_arch = "wasm32"), tokio::test)]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
+async fn close_withdraws_listener_status_before_executor_polls_abort() {
+    let (a, _) = pair("fixture", true);
+    let mesh = mesh(vec![a]);
+    let mut listener = mesh.listen().await.unwrap();
+    assert_eq!(mesh.view()[0].live_listeners, 1);
+    listener.close();
+    assert_eq!(mesh.view()[0].live_listeners, 0);
+    drop(listener);
+    assert_eq!(mesh.view()[0].live_listeners, 0);
 }
 #[cfg_attr(not(target_arch = "wasm32"), tokio::test)]
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]

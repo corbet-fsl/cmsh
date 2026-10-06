@@ -10,9 +10,12 @@ use futures::{
     lock::Mutex as AsyncMutex,
 };
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fmt,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex, Weak,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 /// Coarse facade failures without payloads or peer identifiers.
@@ -93,6 +96,7 @@ impl MeshBuilder {
             backends: self.backends,
             fallback: Mutex::new(fallback),
             switches: Mutex::new(Vec::new()),
+            listeners: Mutex::new(BTreeMap::new()),
             spawn: self.spawn,
         })
     }
@@ -111,11 +115,36 @@ pub struct BackendStatus {
     /// Required guarantees absent from the backend.
     pub missing: BTreeSet<Property>,
 }
+/// Canonical public status projection. Eligibility is caller-reported; listener
+/// reachability comes only from successfully opened, currently running pumps.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
+pub struct BackendView {
+    /// Network discriminator without peer addresses.
+    pub scheme: Scheme,
+    /// This backend's implemented guarantees.
+    pub capabilities: Capabilities,
+    /// Coarse health reported to Fallback; this is not a readiness probe.
+    pub reported_healthy: bool,
+    /// Meets configured guarantee requirements, independent of reachability.
+    pub acceptable: bool,
+    /// Required guarantees absent from this backend.
+    pub missing: BTreeSet<Property>,
+    /// Successfully opened listeners whose receive pumps have not terminated or
+    /// been closed. This snapshot does not promise a future send will succeed.
+    pub live_listeners: usize,
+}
+struct LiveListener(Arc<AtomicBool>);
+impl Drop for LiveListener {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
 /// Thin anonymous-message facade; no framing, storage, keys or retry machine.
 pub struct Mesh {
     backends: Vec<Arc<dyn Backend>>,
     fallback: Mutex<Fallback<Scheme, Property>>,
     switches: Mutex<Vec<Switch<Scheme>>>,
+    listeners: Mutex<BTreeMap<Scheme, Vec<Weak<AtomicBool>>>>,
     spawn: Arc<dyn Spawn>,
 }
 impl Mesh {
@@ -160,6 +189,30 @@ impl Mesh {
                     scheme,
                     capabilities: b.capabilities(),
                     missing,
+                }
+            })
+            .collect()
+    }
+    /// Serializable owner status. Reporting Healthy never creates a live listener.
+    pub fn view(&self) -> Vec<BackendView> {
+        let status = self.status();
+        let mut listeners = self.listeners.lock().unwrap_or_else(|e| e.into_inner());
+        status
+            .into_iter()
+            .map(|status| {
+                let active = listeners.entry(status.scheme.clone()).or_default();
+                active.retain(|entry| {
+                    entry
+                        .upgrade()
+                        .is_some_and(|live| live.load(Ordering::Acquire))
+                });
+                BackendView {
+                    scheme: status.scheme,
+                    capabilities: status.capabilities,
+                    reported_healthy: status.health == Health::Healthy,
+                    acceptable: status.acceptable,
+                    missing: status.missing,
+                    live_listeners: active.len(),
                 }
             })
             .collect()
@@ -250,6 +303,7 @@ impl Mesh {
             addresses: Vec::new(),
             receiver: AsyncMutex::new(receiver),
             pumps: Vec::new(),
+            live: Vec::new(),
         };
         for scheme in schemes {
             let backend = self
@@ -260,13 +314,28 @@ impl Mesh {
                 return Err(MeshError::Config("listener network mismatch"));
             }
             listening.addresses.push(listener.address().clone());
+            let live = Arc::new(AtomicBool::new(true));
+            let mut listeners = self.listeners.lock().unwrap_or_else(|e| e.into_inner());
+            let active = listeners.entry(scheme.clone()).or_default();
+            active.retain(|entry| {
+                entry
+                    .upgrade()
+                    .is_some_and(|live| live.load(Ordering::Acquire))
+            });
+            active.push(Arc::downgrade(&live));
+            drop(listeners);
+            listening.live.push(live.clone());
+            let live = LiveListener(live);
             let maximum = backend.max_payload();
             let sender = sender.clone();
             let (abort, registration) = AbortHandle::new_pair();
             listening.pumps.push(abort);
             self.spawn.spawn(Box::pin(async move {
-                let _ =
-                    Abortable::new(forward(listener, scheme, maximum, sender), registration).await;
+                let _ = Abortable::new(
+                    forward(listener, scheme, maximum, sender, live),
+                    registration,
+                )
+                .await;
             }));
         }
         if listening.addresses.is_empty() {
@@ -284,6 +353,7 @@ async fn forward(
     scheme: Scheme,
     maximum: usize,
     mut sender: mpsc::Sender<Incoming>,
+    live: LiveListener,
 ) {
     loop {
         let event = match listener.next().await {
@@ -300,6 +370,9 @@ async fn forward(
             Err(error) => Incoming::ListenerClosed(scheme.clone(), error.kind()),
         };
         let closed = matches!(event, Incoming::ListenerClosed(..));
+        if closed {
+            live.0.store(false, Ordering::Release);
+        }
         if sender.send(event).await.is_err() || closed {
             break;
         }
@@ -332,6 +405,7 @@ pub struct Listening {
     addresses: Vec<Address>,
     receiver: AsyncMutex<mpsc::Receiver<Incoming>>,
     pumps: Vec<AbortHandle>,
+    live: Vec<Arc<AtomicBool>>,
 }
 impl Listening {
     /// Initially published addresses. Withdraw a network's address when its
@@ -345,6 +419,9 @@ impl Listening {
     }
     /// Stop pumps and withdraw reachability immediately.
     pub fn close(&mut self) {
+        for live in self.live.drain(..) {
+            live.store(false, Ordering::Release);
+        }
         for p in self.pumps.drain(..) {
             p.abort();
         }

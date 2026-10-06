@@ -61,7 +61,13 @@ async fn consumer_shutdown_terminates_a_real_listener_pump() {
     receiver.close();
     let (send, ()) = futures::join!(
         a.app_message(b"already received"),
-        forward(listener, scheme, 1024, sender)
+        forward(
+            listener,
+            scheme,
+            1024,
+            sender,
+            LiveListener(Arc::new(AtomicBool::new(true)))
+        )
     );
     send.unwrap();
     assert!(receiver.next().await.is_none());

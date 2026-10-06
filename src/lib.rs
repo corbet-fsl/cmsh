@@ -13,11 +13,24 @@ pub use async_trait::async_trait;
 pub use capabilities::{Capabilities, LatencyClass};
 pub use cfbk::{Health, Switch, Unavailable};
 pub use error::{Error, ErrorKind};
-pub use mesh::{BackendStatus, Incoming, Listening, Mesh, MeshBuilder, MeshError};
+pub use mesh::{BackendStatus, BackendView, Incoming, Listening, Mesh, MeshBuilder, MeshError};
 pub use port::{Backend, Event, Listener, Reply, ReplyPort};
 pub use property::{Policy, Property, properties};
 #[cfg(feature = "tor")]
 pub use tor::Tor;
+#[cfg(feature = "tor-records")]
+pub mod tor_applications;
+#[cfg(feature = "tor-records")]
+pub mod tor_discovery;
+#[cfg(feature = "tor-records")]
+pub mod tor_records;
+#[cfg(all(feature = "veilid", not(target_arch = "wasm32")))]
+mod veilid;
+#[cfg(all(feature = "veilid", not(target_arch = "wasm32")))]
+pub use veilid::{
+    Veilid, VeilidConfig, VeilidLimits, VeilidRecord, VeilidRecordInitializer, VeilidRecords,
+    VeilidRuntime,
+};
 /// Send on native runtimes, local on Wasm.
 #[cfg(not(target_arch = "wasm32"))]
 pub trait MaybeSend: Send {}

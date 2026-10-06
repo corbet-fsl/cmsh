@@ -1,7 +1,9 @@
 //! What a backend guarantees.
 
 /// Expected latency class of a backend, best first.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, schemars::JsonSchema,
+)]
 pub enum LatencyClass {
     /// Suitable for live voice (tens of milliseconds one way).
     Realtime,
@@ -18,7 +20,7 @@ impl LatencyClass {
 
 /// Capabilities a backend declares. The facade trusts these declarations only
 /// as far as it trusts the backend code; it checks the hooks for consistency.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, schemars::JsonSchema)]
 pub struct Capabilities {
     /// The backend hides network locations from peers under its documented
     /// threat model. This is not resistance to global timing correlation, nor
