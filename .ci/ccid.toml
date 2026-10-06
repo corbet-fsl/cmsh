@@ -1,5 +1,6 @@
 schema = 1
 project = "cmsh"
+repository = "https://git.corbet.ch/corbet-libs/cmsh.git"
 
 [checks.verify]
 kind = "commands"
@@ -9,10 +10,17 @@ cache_env = ["PKG_CONFIG_PATH", "NIX_CFLAGS_COMPILE", "NIX_LDFLAGS", "LD_LIBRARY
 cache_outputs = ["coverage.json", "coverage.lcov", "coverage.txt", "dependency-metadata.json", "records-metadata.json"]
 
 [render]
-tool_revision = "81ebac8e86e20bc93b69d5e912bbcb0c0d036d58"
+tool_revision = "53c129c2efa3b9279d2ecbc237d15acdfb656d8c"
 
 [jobs.verify]
 scheduler = "crow"
 checks = ["verify"]
 workflow = "repository-jobs"
 command = ["bash", ".ci/run-cached.sh"]
+
+[push_consumer.cmsg-v01]
+consumer = "https://git.corbet.ch/corbet-libs/cmsg.git"
+branch = "v01"
+consumer_branch = "v01"
+job = "v01-push"
+self_name = "cmsh"
