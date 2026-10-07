@@ -8,7 +8,7 @@ from pathlib import Path
 packages=json.load(open('records-metadata.json'))['packages']
 transport=[p for p in packages if p['name']=='ctrn']
 assert len(transport)==1
-assert transport[0]['source'].startswith('git+https://github.com/corbet-foss/ctrn?branch=main#')
+assert transport[0]['source'].startswith('git+https://git.corbet.ch/corbet-foss/ctrn?branch=main#')
 print(Path(transport[0]['manifest_path']).parent)
 PY
 )

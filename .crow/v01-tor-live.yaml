@@ -40,7 +40,7 @@ steps:
     environment:
       CCID_VERDICT_JOBS: 'verify'
       CCID_STATUS_CONFIG: '${CCID_STATUS_CONFIG:-}'
-      CCID_REVISION: '7cfd84a1c845890d02769801e405a16a152a3a11'
+      CCID_REVISION: '74e287fff21079a2ead49dc1e7fe792b8525482e'
     commands:
       - |
         set -eu

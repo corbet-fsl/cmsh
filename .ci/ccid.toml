@@ -21,7 +21,7 @@ cache = false
 commands = [["ccid", "tor", "v01-tor-live"]]
 
 [render]
-tool_revision = "7cfd84a1c845890d02769801e405a16a152a3a11"
+tool_revision = "74e287fff21079a2ead49dc1e7fe792b8525482e"
 
 [jobs.verify]
 scheduler = "crow"

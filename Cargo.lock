@@ -447,7 +447,7 @@ dependencies = [
 [[package]]
 name = "cdht"
 version = "0.0.0"
-source = "git+https://github.com/corbet-foss/cdht?branch=main#9f44ffb779f296bd9162fceeee8aa9f62b1a9a66"
+source = "git+https://git.corbet.ch/corbet-foss/cdht?branch=main#9f44ffb779f296bd9162fceeee8aa9f62b1a9a66"
 dependencies = [
  "blake3",
  "capnp",
@@ -462,7 +462,7 @@ dependencies = [
 [[package]]
 name = "cfbk"
 version = "0.0.0"
-source = "git+https://github.com/corbet-foss/cfbk?branch=main#3a0c2dd56a2d7d3432a2f4d5ab16a83d3f95992a"
+source = "git+https://git.corbet.ch/corbet-foss/cfbk?branch=main#3a0c2dd56a2d7d3432a2f4d5ab16a83d3f95992a"
 
 [[package]]
 name = "cfg-if"
@@ -473,7 +473,7 @@ checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 [[package]]
 name = "cfry"
 version = "0.1.0"
-source = "git+https://github.com/corbet-foss/cfry?branch=main#219611e3dd0c50bbc284bff79f95651453524564"
+source = "git+https://git.corbet.ch/corbet-foss/cfry?branch=main#219611e3dd0c50bbc284bff79f95651453524564"
 dependencies = [
  "bytes",
  "futures",
@@ -732,24 +732,27 @@ dependencies = [
 [[package]]
 name = "ctrn"
 version = "0.1.0"
-source = "git+https://github.com/corbet-foss/ctrn?branch=main#9894d84f726132129c81f03a2c42be131d9aa1ac"
+source = "git+https://git.corbet.ch/corbet-foss/ctrn?branch=main#fa5833b62419e6612ac30fb4f1e4f4acd055d734"
 dependencies = [
  "arti-client",
  "async-trait",
  "cfry",
  "data-encoding",
+ "fs-mistrust",
  "futures",
  "safelog",
  "sha3 0.12.0",
  "tokio",
  "tor-cell",
  "tor-config",
+ "tor-error",
  "tor-guardmgr",
  "tor-hscrypto",
  "tor-hsservice",
  "tor-keymgr",
  "tor-proto",
  "tor-rtcompat",
+ "tracing",
  "wasm-bindgen",
 ]
 
