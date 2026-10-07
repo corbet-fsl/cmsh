@@ -17,7 +17,7 @@ kind = "commands"
 commands = [["ccid", "tor", "v01-tor-live"]]
 
 [render]
-tool_revision = "c813b7c584c41e21d54bac3a9f61af5d3ef63024"
+tool_revision = "7cfd84a1c845890d02769801e405a16a152a3a11"
 
 [jobs.verify]
 scheduler = "crow"

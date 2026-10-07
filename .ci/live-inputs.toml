@@ -6,13 +6,14 @@ schema = 1
 # and verifies it against the committed digest before any use. Ambient tool
 # paths are referenced in place, never copied, so Nix runtime closures stay
 # valid. Frozen driver scripts come from the verified root archive below.
-# Product pins are unchanged and no shims are added.
+# ctrn ca0fab8 carries the listener failure-isolation fix; other product pins
+# and the original nine-onion probe assertions remain unchanged.
 
 [live-inputs.v01-source-bundle]
 archive_variable = "V01_SOURCE_BUNDLE"
 digest_variable = "V01_SOURCE_BUNDLE_SHA256"
-sha256 = "a89129a0f4e827c807f1453ef40c5968d1a063267d4be8741783abdaa31e82b6"
-default_path = "/workspaces/ci-sources/v01-tor-records/a89129a0f4e827c807f1453ef40c5968d1a063267d4be8741783abdaa31e82b6.tar"
+sha256 = "65a5c7e1fff9d676b94510cdd2f325f59dc09b24b09fe28bf927729d5b60a87b"
+default_path = "/workspaces/ci-sources/v01-tor-records/65a5c7e1fff9d676b94510cdd2f325f59dc09b24b09fe28bf927729d5b60a87b.tar"
 workflows = ["v01-tor-live"]
 
 [live-inputs.v01-chutney]
@@ -25,9 +26,9 @@ workflows = ["v01-tor-live"]
 [live-inputs.v01-root-source]
 archive_variable = "V01_ROOT_SOURCE_ARCHIVE"
 digest_variable = "V01_ROOT_SOURCE_SHA256"
-sha256 = "a84b41fcf68d71507db9e46072c3c329ec1b2667114c38fe3ff275bd7ab6cb1d"
-default_path = "/workspaces/ci-sources/146/a84b41fcf68d71507db9e46072c3c329ec1b2667114c38fe3ff275bd7ab6cb1d.tar"
-commit = "bb0f72d89dbfc5323580205740139fc84cc7a284"
+sha256 = "656ae23ee0dd8d8a75c642acf213ac4469d409ffe7939a5b498447675fff741d"
+default_path = "/workspaces/ci-sources/146/656ae23ee0dd8d8a75c642acf213ac4469d409ffe7939a5b498447675fff741d.tar"
+commit = "7e0e06c72a1ac8d7adff92a9c615698a6a2917df"
 workflows = ["v01-tor-live"]
 
 [live-tools.receipt]
@@ -48,11 +49,11 @@ sha256 = "f5cce9ecc914b0c2eee78056c1c816aa02ae4c73c0aaf958eb5e0bb9281f34ea"
 
 [live-drivers.harness]
 file = ".ci/v01-tor-live.py"
-sha256 = "20314ee07fc2adaae05c4018268abec49865c2a78e0710519fa55de0b1c5cc5b"
+sha256 = "5060db777fde4649d65a467852bbb5460da9494f11800b2ded1068e1ab8d255e"
 
 [live-drivers.components]
 file = ".ci/v01-tor-records.py"
-sha256 = "6ad575e38543b9668379894ca8752361aa4b76bc28b66cf69a7c6b66fa4a9e22"
+sha256 = "7a768a0805bf4ed53ebca8c8fb8521693386681d4c27d957cd82943c427a1002"
 
 [live-drivers.helpers]
 file = ".ci/v01-records.py"
@@ -93,4 +94,4 @@ sha256 = "61ce675fface73dbbf431603767a3aa7f05bf9d6995d0555855fa5e4ead667e6"
 [diag.discovery-lib]
 file = "src/tor_discovery.rs"
 sha256 = "fc6c8db74254e6246bb6da69228e4afe2c17ff42575133bb3ab1b530d2c30041"
-diagnostic_sha256 = "f67ec53ed7f19e9bf7293eca631a24687b14fc2558109269edcbd901fade91d7"
+diagnostic_sha256 = "42dc2e7df8f7e134a0a385587176bb0d2713954a12ca1e217e98e150d8f79785"
