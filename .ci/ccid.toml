@@ -5,19 +5,23 @@ project = "cmsh"
 kind = "commands"
 commands = [["bash", ".ci/verify.sh"]]
 cache_tools = [["rustc", "-vV"], ["cargo", "--version"], ["rustup", "run", "nightly", "rustc", "-vV"], ["rustup", "run", "nightly", "cargo", "llvm-cov", "--version"], ["node", "--version"], ["python3", "--version"], ["jq", "--version"], ["curl", "--version"], ["git", "--version"], ["gcc", "--version"], ["pkg-config", "--version"], ["sqlite3", "--version"]]
-cache_env = ["PKG_CONFIG_PATH", "NIX_CFLAGS_COMPILE", "NIX_LDFLAGS", "LD_LIBRARY_PATH"]
+cache_env = ["PKG_CONFIG_PATH", "NIX_CFLAGS_COMPILE", "NIX_LDFLAGS", "LD_LIBRARY_PATH", "CI_TOR_LIB_OUT", "CI_TOR_LIB_DEV"]
 cache_outputs = ["coverage.json", "coverage.lcov", "coverage.txt", "dependency-metadata.json", "records-metadata.json"]
 
 [checks.records]
 kind = "commands"
+# Live private Tor network: a result is never replayed from a cache.
+cache = false
 commands = [["ccid", "tor", "records"]]
 
 [checks.v01-tor-live]
 kind = "commands"
+# Live private Tor network: a result is never replayed from a cache.
+cache = false
 commands = [["ccid", "tor", "v01-tor-live"]]
 
 [render]
-tool_revision = "7cfd84a1c845890d02769801e405a16a152a3a11"
+tool_revision = "ab0427df49580038392f676fb935e2fd35ebaa77"
 
 [jobs.verify]
 scheduler = "crow"
