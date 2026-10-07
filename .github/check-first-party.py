@@ -7,7 +7,7 @@ import tomllib
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-FIRST_PARTY = re.compile(r"^(?:git\+)?https://github\.com/(?:corbet-(?:foss|libs)|cmtymeet)/")
+FIRST_PARTY = re.compile(r"^(?:git\+)?https://git\.corbet\.ch/(?:corbet-(?:foss|libs)|cmtymeet)/")
 SHA = re.compile(r"^[0-9a-f]{40}$")
 
 
@@ -46,7 +46,7 @@ def rejects(function, value):
 
 
 def self_test():
-    repo = 'https://github.com/corbet-foss/example'
+    repo = 'https://git.corbet.ch/corbet-foss/example'
     source = 'git+' + repo + '?branch=main#' + 'a' * 40
     package = {'name': 'example', 'source': source}
     check_lock([package])

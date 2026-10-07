@@ -10,7 +10,7 @@ cache_env = ["PKG_CONFIG_PATH", "NIX_CFLAGS_COMPILE", "NIX_LDFLAGS", "LD_LIBRARY
 cache_outputs = ["coverage.json", "coverage.lcov", "coverage.txt", "dependency-metadata.json", "records-metadata.json"]
 
 [render]
-tool_revision = "53c129c2efa3b9279d2ecbc237d15acdfb656d8c"
+tool_revision = "e38f347d6941aa105ac4b55a0d4b8fec2ef22433"
 
 [jobs.verify]
 scheduler = "crow"

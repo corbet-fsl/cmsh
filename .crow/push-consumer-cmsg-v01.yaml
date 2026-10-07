@@ -17,7 +17,7 @@ steps:
   - name: push-consumer
     image: bash
     environment:
-      CCID_REVISION: '53c129c2efa3b9279d2ecbc237d15acdfb656d8c'
+      CCID_REVISION: 'e38f347d6941aa105ac4b55a0d4b8fec2ef22433'
       CI_TOOL_BINARY: {from_secret: CI_TOOL_BINARY_STATIC}
       CI_TOOL_BINARY_SHA256: {from_secret: CI_TOOL_BINARY_SHA256_STATIC}
     commands:
