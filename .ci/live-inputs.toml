@@ -28,23 +28,23 @@ archive_variable = "V01_ROOT_SOURCE_ARCHIVE"
 digest_variable = "V01_ROOT_SOURCE_SHA256"
 sha256 = "656ae23ee0dd8d8a75c642acf213ac4469d409ffe7939a5b498447675fff741d"
 default_path = "/workspaces/ci-sources/146/656ae23ee0dd8d8a75c642acf213ac4469d409ffe7939a5b498447675fff741d.tar"
-commit = "7e0e06c72a1ac8d7adff92a9c615698a6a2917df"
+commit = "1e97be030a076f3b04341c834ce399e350b3d75e"
 workflows = ["v01-tor-live"]
 
 [live-tools.receipt]
-path = "/workspaces/component-releases/cmsg/20a55ac8159811bbac7c8370ae7f28fc075f2153/tor-tools/tools.json"
+path = "/workspaces/component-releases/cmsg/5f58a98ea680855fce81d8a40a3059d6ff9a7941/tor-tools/tools.json"
 sha256 = "b3a64bbc373b886dc164e859c1d26e7a4055a7d65b8c2556a0bd2cff4ac152e0"
 
 [live-tools.tor]
-path = "/workspaces/component-tools/cmsg/tor-0.4.9.12-20a55ac8159811bbac7c8370ae7f28fc075f2153/bin/tor"
+path = "/workspaces/component-tools/cmsg/tor-0.4.9.12-5f58a98ea680855fce81d8a40a3059d6ff9a7941/bin/tor"
 sha256 = "3b03c797db84b76bcde96f68997656cc42368b173c0da88b40d5acc2d666cc1b"
 
 [live-tools.tor-gencert]
-path = "/workspaces/component-tools/cmsg/tor-0.4.9.12-20a55ac8159811bbac7c8370ae7f28fc075f2153/bin/tor-gencert"
+path = "/workspaces/component-tools/cmsg/tor-0.4.9.12-5f58a98ea680855fce81d8a40a3059d6ff9a7941/bin/tor-gencert"
 sha256 = "68df7a29ae0bed669df63b4c8d8658240cb951618860623212fdbd8993923114"
 
 [live-tools.python]
-path = "/workspaces/component-tools/cmsg/python-20a55ac8159811bbac7c8370ae7f28fc075f2153/bin/python"
+path = "/workspaces/component-tools/cmsg/python-5f58a98ea680855fce81d8a40a3059d6ff9a7941/bin/python"
 sha256 = "f5cce9ecc914b0c2eee78056c1c816aa02ae4c73c0aaf958eb5e0bb9281f34ea"
 
 [live-drivers.harness]

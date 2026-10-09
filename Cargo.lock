@@ -447,7 +447,7 @@ dependencies = [
 [[package]]
 name = "cdht"
 version = "0.0.0"
-source = "git+https://github.com/corbet-foss/cdht?branch=main#9f44ffb779f296bd9162fceeee8aa9f62b1a9a66"
+source = "git+https://github.com/corbet-foss/cdht?branch=main#2dea14d6debf04584d258cb6a7b1b85e7b4a22cf"
 dependencies = [
  "blake3",
  "capnp",
@@ -462,7 +462,7 @@ dependencies = [
 [[package]]
 name = "cfbk"
 version = "0.0.0"
-source = "git+https://github.com/corbet-foss/cfbk?branch=main#3a0c2dd56a2d7d3432a2f4d5ab16a83d3f95992a"
+source = "git+https://github.com/corbet-foss/cfbk?branch=main#b0ed5d352b2d1d8af48efc781b7135e4b8aa7110"
 
 [[package]]
 name = "cfg-if"
@@ -473,7 +473,7 @@ checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 [[package]]
 name = "cfry"
 version = "0.1.0"
-source = "git+https://github.com/corbet-foss/cfry?branch=main#219611e3dd0c50bbc284bff79f95651453524564"
+source = "git+https://github.com/corbet-foss/cfry?branch=main#3dbe55fe9725fa05674789e3038d2e7ebf5ef39d"
 dependencies = [
  "bytes",
  "futures",
@@ -732,7 +732,7 @@ dependencies = [
 [[package]]
 name = "ctrn"
 version = "0.1.0"
-source = "git+https://github.com/corbet-foss/ctrn?branch=main#9894d84f726132129c81f03a2c42be131d9aa1ac"
+source = "git+https://github.com/corbet-foss/ctrn?branch=main#6d72ae2803f4974365812113a40968077c9a1f8f"
 dependencies = [
  "arti-client",
  "async-trait",
