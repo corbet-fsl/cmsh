@@ -21,7 +21,7 @@ veilid = ["dep:cvln", "dep:cdht"]
 
 [dependencies]
 cdht = { git = "https://git.corbet.ch/corbet-foss/cdht.git", branch = "v01", optional = true }
-cfbk = { git = "https://git.corbet.ch/corbet-foss/cfbk.git", branch = "v01" }
+cfbk = { git = "https://git.corbet.ch/corbet-foss/cfbk", branch = "main" }
 ctrn = { git = "https://git.corbet.ch/corbet-foss/ctrn.git", branch = "v01", default-features = false, optional = true }
 futures = "0.3"
 zeroize = "1"
