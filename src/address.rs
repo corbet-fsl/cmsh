@@ -8,7 +8,8 @@ pub const MAX_ADDRESS_BYTES: usize = 64 * 1024;
 
 /// Network name, for example `tor` or `veilid`: 1 to 16 characters from
 /// `a-z`, `0-9` and `-`, starting with a letter.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, schemars::JsonSchema)]
+#[serde(transparent)]
 pub struct Scheme(String);
 
 impl Scheme {
