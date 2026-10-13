@@ -20,9 +20,9 @@ tor-records = ["tor", "dep:cdht"]
 veilid = ["dep:cvln", "dep:cdht"]
 
 [dependencies]
-cdht = { git = "https://git.corbet.ch/corbet-foss/cdht.git", branch = "v01", optional = true }
+cdht = { git = "https://git.corbet.ch/corbet-foss/cdht.git", branch = "main", optional = true }
 cfbk = { git = "https://git.corbet.ch/corbet-foss/cfbk", branch = "main" }
-ctrn = { git = "https://git.corbet.ch/corbet-foss/ctrn.git", branch = "v01", default-features = false, optional = true }
+ctrn = { git = "https://git.corbet.ch/corbet-foss/ctrn.git", branch = "main", default-features = false, optional = true }
 futures = "0.3"
 zeroize = "1"
 async-trait = "0.1"
@@ -33,7 +33,7 @@ schemars = "1"
 cvln = { git = "https://git.corbet.ch/corbet-foss/cvln.git", branch = "main", optional = true }
 
 [dev-dependencies]
-cfry = { git = "https://git.corbet.ch/corbet-foss/cfry.git", branch = "v01" }
+cfry = { git = "https://git.corbet.ch/corbet-foss/cfry.git", branch = "main" }
 tokio = { version = "1.47", features = ["io-util"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 wasm-bindgen-test = "0.3"
@@ -41,8 +41,8 @@ wasm-bindgen-test = "0.3"
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 veilid-core-optimized = { git = "https://gitlab.com/veilid/veilid.git", branch = "main", default-features = false, features = ["enable-crypto-vld0"] }
 blake3 = "1.8"
-cdht = { git = "https://git.corbet.ch/corbet-foss/cdht.git", branch = "v01" }
-ctrn = { git = "https://git.corbet.ch/corbet-foss/ctrn.git", branch = "v01", features = ["arti"] }
+cdht = { git = "https://git.corbet.ch/corbet-foss/cdht.git", branch = "main" }
+ctrn = { git = "https://git.corbet.ch/corbet-foss/ctrn.git", branch = "main", features = ["arti"] }
 ed25519-dalek = { version = "3.0.0", features = ["digest", "hazmat"] }
 serde_json = "1"
 tempfile = "3"
