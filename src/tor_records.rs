@@ -1,7 +1,7 @@
 //! Original record RPCs over Tor's authenticated dynamic routing owner. Bootstrap
 //! construction has no store; member storage keeps original signed values intact.
 use crate::tor_applications::TorApplications;
-use crate::tor_discovery::{TorDiscovery, TorNodeIdentity, TorWatcher};
+use crate::tor_discovery::{CallKind, TorDiscovery, TorNodeIdentity, TorWatcher};
 use cdht::rpc::envelope::AuthenticatedOperation;
 use cdht::{
     Backend, Capacity, Change, Descriptor, Error, LocalBackend, Network, NodeId, RecordKey,
@@ -310,11 +310,13 @@ impl<I: TorNodeIdentity, V: Verifier, W: TorWatcher> TorRecords<I, V, W> {
         &self,
         received: AuthenticatedOperation,
     ) -> Result<Vec<u8>, Error> {
-        let routable = self.discovery.observe_sender(&received)?;
+        // Each branch admits its caller once: a dial-only caller only for a lookup,
+        // read or write, within its call budget (TorDiscovery::admit_caller).
         if cdht::rpc::peers::find_query(received.operation()).is_ok() {
             return self.discovery.answer_find_authenticated(&received).await;
         }
         if let Ok((_, request)) = inspection(received.operation()) {
+            self.discovery.admit_caller(&received, CallKind::Inspect)?;
             if received.operation().signer() != received.sender() {
                 return Err(Error::BadSignature);
             }
@@ -345,14 +347,19 @@ impl<I: TorNodeIdentity, V: Verifier, W: TorWatcher> TorRecords<I, V, W> {
                 .await;
         }
         let (_, request) = query(received.operation())?;
+        // A dial-only caller's watch is refused here: it has no listener to deliver to.
+        self.discovery.admit_caller(
+            &received,
+            match &request {
+                Query::Get { .. } => CallKind::Get,
+                Query::Set { .. } => CallKind::Set,
+                Query::Watch { .. } => CallKind::Watch,
+            },
+        )?;
         if !matches!(request, Query::Watch { .. })
             && received.operation().signer() != received.sender()
         {
             return Err(Error::BadSignature);
-        }
-        // A dial-only client has no listener: a ValueChanged for it could never arrive.
-        if matches!(request, Query::Watch { .. }) && !routable {
-            return Err(Error::WatchRefused);
         }
         let key = match &request {
             Query::Get { key, .. } | Query::Set { key, .. } | Query::Watch { key, .. } => key,

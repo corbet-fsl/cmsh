@@ -169,6 +169,69 @@ pub struct TorDiscoveryReport {
     /// The lookup hit its explicit resource limit.
     pub limited: bool,
 }
+/// Calls one dial-only (sender-less) caller may make to this node per
+/// [`DIAL_ONLY_WINDOW_MS`]. A dial-only caller sends no PeerInfo, and a Tor stream
+/// carries one call and hides its circuit, so the caller's authenticated node key (one
+/// per registration scope) is the only connection identity a node has for it. A
+/// registration needs a few lookups, reads and writes per node; this leaves room for
+/// retries while keeping a node from being a free lookup service. A code constant on
+/// purpose: every node enforces the same budget, no deployment can loosen it.
+pub const DIAL_ONLY_CALLS_PER_WINDOW: u32 = 64;
+/// The window [`DIAL_ONLY_CALLS_PER_WINDOW`] counts over, in runtime milliseconds.
+pub const DIAL_ONLY_WINDOW_MS: u64 = 60_000;
+/// Dial-only callers a node tracks at once. Their keys are free to mint, so this bounds
+/// both the tracking memory and the node's total sender-less load: while every slot is
+/// inside its window, a new dial-only caller is refused.
+pub const DIAL_ONLY_CALLERS: usize = 256;
+
+/// The call a node is asked to answer, as far as admission is concerned.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CallKind {
+    /// A FindNode lookup.
+    Lookup,
+    /// A record read (descriptor or subkey value).
+    Get,
+    /// A record write; the value stays signed by its record's own writer keys.
+    Set,
+    /// A sequence-hint inspection.
+    Inspect,
+    /// A watch lease.
+    Watch,
+    /// An application call.
+    Application,
+}
+
+/// Fixed-window call counts per dial-only caller, bounded by [`DIAL_ONLY_CALLERS`].
+#[derive(Default)]
+pub(crate) struct DialOnlyCallers {
+    /// Caller -> (window start in runtime ms, calls admitted in that window).
+    windows: BTreeMap<NodeId, (u64, u32)>,
+}
+impl DialOnlyCallers {
+    pub(crate) fn admit(&mut self, caller: NodeId, now_ms: u64) -> Result<(), Error> {
+        let open = |start: u64| now_ms.saturating_sub(start) < DIAL_ONLY_WINDOW_MS;
+        if let Some((start, calls)) = self.windows.get_mut(&caller) {
+            if !open(*start) {
+                *start = now_ms;
+                *calls = 0;
+            }
+            if *calls >= DIAL_ONLY_CALLS_PER_WINDOW {
+                return Err(Error::RateLimited);
+            }
+            *calls += 1;
+            return Ok(());
+        }
+        if self.windows.len() >= DIAL_ONLY_CALLERS {
+            self.windows.retain(|_, (start, _)| open(*start));
+            if self.windows.len() >= DIAL_ONLY_CALLERS {
+                return Err(Error::RateLimited);
+            }
+        }
+        self.windows.insert(caller, (now_ms, 1));
+        Ok(())
+    }
+}
+
 /// Bounded signed routing state for one community's actual Tor runtime. A
 /// bootstrap can use this alone: the type has no DHT record storage capability.
 pub struct TorDiscovery<I, V> {
@@ -180,6 +243,7 @@ pub struct TorDiscovery<I, V> {
     clock: Arc<dyn ctrn::Clock>,
     limits: TorDiscoveryLimits,
     routes: Mutex<BTreeMap<NodeId, Peer>>,
+    dial_only_callers: Mutex<DialOnlyCallers>,
     envelope_time: Arc<dyn TorEnvelopeTime>,
     envelope_window: TimeWindow,
 }
@@ -253,6 +317,7 @@ impl<I: TorNodeIdentity, V: Verifier> TorDiscovery<I, V> {
             clock,
             limits,
             routes: Mutex::new(BTreeMap::new()),
+            dial_only_callers: Mutex::new(DialOnlyCallers::default()),
             envelope_time,
             envelope_window,
         };
@@ -502,6 +567,29 @@ impl<I: TorNodeIdentity, V: Verifier> TorDiscovery<I, V> {
         self.mark_responsive(received.sender(), true)?;
         Ok(true)
     }
+    /// Admit one authenticated call: a sender with PeerInfo is routed as before; a
+    /// dial-only (sender-less) caller may only look up, read and write records, within
+    /// its [`DIAL_ONLY_CALLS_PER_WINDOW`] budget. Returns whether the sender is routable.
+    pub(crate) fn admit_caller(
+        &self,
+        received: &AuthenticatedOperation,
+        kind: CallKind,
+    ) -> Result<bool, Error> {
+        if self.observe_sender(received)? {
+            return Ok(true);
+        }
+        match kind {
+            CallKind::Lookup | CallKind::Get | CallKind::Set => {}
+            // No listener: a ValueChanged for it could never arrive.
+            CallKind::Watch => return Err(Error::WatchRefused),
+            CallKind::Inspect | CallKind::Application => return Err(Error::Refused),
+        }
+        self.dial_only_callers
+            .lock()
+            .map_err(|_| Error::Unavailable)?
+            .admit(*received.sender(), self.now_ms())?;
+        Ok(false)
+    }
     pub(crate) async fn call_watch<W: TorWatcher>(
         &self,
         to: &NodeId,
@@ -654,7 +742,7 @@ impl<I: TorNodeIdentity, V: Verifier> TorDiscovery<I, V> {
         let own = self.serving()?.info.clone();
         let request = received.operation();
         let (_, target, caps) = find_query(request)?;
-        self.observe_sender(received)?;
+        self.admit_caller(received, CallKind::Lookup)?;
         let mut peers: Vec<_> = self
             .routes
             .lock()

@@ -1,5 +1,5 @@
 //! Mesh application delivery on the same original authenticated Tor RPC listener.
-use crate::tor_discovery::{TorDiscovery, TorNodeIdentity, TorWatcher};
+use crate::tor_discovery::{CallKind, TorDiscovery, TorNodeIdentity, TorWatcher};
 use crate::tor_records::TorRecords;
 use crate::{
     Address, Backend, Capabilities, ErrorKind, Event, LatencyClass, Listener, Reply, ReplyPort,
@@ -147,7 +147,10 @@ impl<I: TorNodeIdentity + 'static, V: Verifier + crate::MaybeSend + crate::Maybe
                         if payload.len() > self.maximum {
                             return Err(Error::ValueTooLarge);
                         }
-                        self.discovery.observe_sender(&received)?;
+                        // A dial-only (sender-less) caller is refused: it may only
+                        // look up, read and write records.
+                        self.discovery
+                            .admit_caller(&received, CallKind::Application)?;
                         let port = ApplicationReply {
                             discovery: self.discovery.clone(),
                             received,

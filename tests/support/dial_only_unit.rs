@@ -217,8 +217,17 @@ fn record_limits() -> TorRecordLimits {
     }
 }
 
-#[tokio::test]
-async fn a_dial_only_client_is_answered_but_never_listens_or_gets_routed() {
+/// A serving node (key 2, with a store) and a dial-only client (key 7) over one
+/// in-memory byte network; the serving node runs its records loop.
+struct Pair {
+    server: Arc<TorDiscovery<NodeKey, TestVerifier>>,
+    server_records: Arc<TorRecords<NodeKey, TestVerifier, NodeKey>>,
+    server_network: Arc<Bytes>,
+    client: Arc<TorDiscovery<NodeKey, TestVerifier>>,
+    client_records: Arc<TorRecords<NodeKey, TestVerifier, NodeKey>>,
+    client_driver: Arc<Bytes>,
+}
+async fn pair() -> Pair {
     let serving_address = ctrn::OnionEndpoint::parse(
         "baeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaqcaibaecymad.onion",
         443,
@@ -317,7 +326,9 @@ async fn a_dial_only_client_is_answered_but_never_listens_or_gets_routed() {
             messages: client_messages,
             identity: NodeKey(7),
             verifier: TestVerifier,
-            bootstrap: vec![advertisement],
+            bootstrap: vec![
+                UnverifiedPeerInfoBytes::from_bytes(advertisement.as_bytes().to_vec()).unwrap(),
+            ],
             clock: Arc::new(Monotonic),
             limits: LIMITS,
             envelope_time: Arc::new(Wall),
@@ -328,7 +339,26 @@ async fn a_dial_only_client_is_answered_but_never_listens_or_gets_routed() {
     assert!(client.is_dial_only() && !client.stores_records());
     let client_records =
         Arc::new(TorRecords::new(client.clone(), NodeKey(7), None, record_limits()).unwrap());
+    Pair {
+        server,
+        server_records,
+        server_network,
+        client,
+        client_records,
+        client_driver,
+    }
+}
 
+#[tokio::test]
+async fn a_dial_only_client_is_answered_but_never_listens_or_gets_routed() {
+    let Pair {
+        server,
+        server_network,
+        client,
+        client_records,
+        client_driver,
+        ..
+    } = pair().await;
     // The client's questions carry no sender PeerInfo and are still answered.
     let report = client.discover(key(9).public_key()).await.unwrap();
     assert_eq!(
@@ -379,4 +409,183 @@ async fn a_dial_only_client_is_answered_but_never_listens_or_gets_routed() {
     );
     assert_eq!(client_driver.listened.load(Ordering::SeqCst), 0);
     assert_eq!(server_network.listened.load(Ordering::SeqCst), 1);
+}
+
+/// The exact bytes a dial-only caller `from` sends node 2: no sender PeerInfo.
+async fn sealed(from: u8, question: &Question) -> Vec<u8> {
+    let to = key(2).public_key();
+    let signed = TorNodeIdentity::question(&NodeKey(from), question, &to)
+        .await
+        .unwrap();
+    NodeKey(from)
+        .seal(&signed, &to, Wall.now_us().unwrap())
+        .await
+        .unwrap()
+}
+fn get(record: cdht::RecordKey) -> Question {
+    Question::new(&Query::Get {
+        key: record,
+        subkey: 0,
+        want_descriptor: true,
+    })
+    .unwrap()
+}
+
+#[tokio::test]
+async fn a_sender_less_caller_may_only_look_up_read_and_write_records() {
+    let Pair {
+        server,
+        server_records,
+        ..
+    } = pair().await;
+    let record = cdht::RecordKey([5; 32]);
+    // Admitted: a lookup and a read (a write is admitted the same way: CallKind::Set).
+    let find = find_node(&key(9).public_key(), &[DHTV]).unwrap();
+    assert!(server.answer_find(sealed(7, &find).await).await.is_ok());
+    assert!(
+        server_records
+            .handle_call(sealed(7, &get(record)).await)
+            .await
+            .is_ok()
+    );
+    for kind in [CallKind::Lookup, CallKind::Get, CallKind::Set] {
+        let received = server
+            .authenticate(sealed(7, &get(record)).await)
+            .await
+            .unwrap();
+        assert_eq!(server.admit_caller(&received, kind), Ok(false), "{kind:?}");
+    }
+    // Refused: an inspection, a watch and an application call.
+    let inspection = cdht::rpc::inspect::Inspection {
+        key: record,
+        subkeys: std::iter::once(0u32).collect(),
+        want_descriptor: false,
+    }
+    .question()
+    .unwrap();
+    assert_eq!(
+        server_records
+            .handle_call(sealed(7, &inspection).await)
+            .await
+            .err(),
+        Some(Error::Refused)
+    );
+    let watch = Question::new(&Query::Watch {
+        key: record,
+        subkeys: std::iter::once(0u32).collect(),
+        duration_us: 0,
+        count: 1,
+        watch_id: 1,
+    })
+    .unwrap();
+    let signed = TorWatcher::question(&NodeKey(7), &record, &watch, &key(2).public_key())
+        .await
+        .unwrap();
+    let bytes = NodeKey(7)
+        .seal(&signed, &key(2).public_key(), Wall.now_us().unwrap())
+        .await
+        .unwrap();
+    assert_eq!(
+        server_records.handle_call(bytes).await.err(),
+        Some(Error::WatchRefused)
+    );
+    let application = Question::application(b"hello").unwrap();
+    let received = server
+        .authenticate(sealed(7, &application).await)
+        .await
+        .unwrap();
+    assert_eq!(
+        server.admit_caller(&received, CallKind::Application),
+        Err(Error::Refused)
+    );
+    // The same calls from a sender with PeerInfo are routed and not gated here.
+    let advertised = UnverifiedPeerInfoBytes::sign_extension(
+        Advertisement {
+            timestamp_us: Wall.now_us().unwrap(),
+            capabilities: vec![DHTV],
+            outbound_protocols: vec![ctrn::TOR3],
+            address_types: vec![ctrn::TOR3],
+            dial_info: vec![ExtensionDialInfo {
+                class: DIRECT,
+                protocol: ctrn::TOR3,
+                detail: ctrn::OnionEndpoint::parse(
+                    "a4dqobyha4dqobyha4dqobyha4dqobyha4dqobyha4dqobyha4dwc6ad.onion",
+                    443,
+                )
+                .unwrap()
+                .address()
+                .bytes()
+                .to_vec(),
+            }],
+        },
+        &key(3),
+    )
+    .unwrap();
+    for (question, kind) in [
+        (inspection, CallKind::Inspect),
+        (application, CallKind::Application),
+    ] {
+        let question = question.with_sender(&advertised).unwrap();
+        let received = server
+            .authenticate(sealed(3, &question).await)
+            .await
+            .unwrap();
+        assert_eq!(server.admit_caller(&received, kind), Ok(true), "{kind:?}");
+    }
+}
+
+#[tokio::test]
+async fn a_dial_only_caller_keeps_to_its_call_budget() {
+    let Pair { server_records, .. } = pair().await;
+    let record = cdht::RecordKey([5; 32]);
+    for call in 0..DIAL_ONLY_CALLS_PER_WINDOW {
+        assert!(
+            server_records
+                .handle_call(sealed(7, &get(record)).await)
+                .await
+                .is_ok(),
+            "call {call} is within the budget"
+        );
+    }
+    assert_eq!(
+        server_records
+            .handle_call(sealed(7, &get(record)).await)
+            .await
+            .err(),
+        Some(Error::RateLimited)
+    );
+    // The budget is per caller: another dial-only caller is still answered.
+    assert!(
+        server_records
+            .handle_call(sealed(8, &get(record)).await)
+            .await
+            .is_ok()
+    );
+}
+
+#[test]
+fn the_dial_only_budget_renews_per_window_and_bounds_its_callers() {
+    let mut callers = DialOnlyCallers::default();
+    let caller = [1; 32];
+    for _ in 0..DIAL_ONLY_CALLS_PER_WINDOW {
+        callers.admit(caller, 0).unwrap();
+    }
+    assert_eq!(
+        callers.admit(caller, DIAL_ONLY_WINDOW_MS - 1),
+        Err(Error::RateLimited)
+    );
+    // A clock that steps back keeps the window, never renews it.
+    assert_eq!(callers.admit(caller, 0), Err(Error::RateLimited));
+    assert_eq!(callers.admit(caller, DIAL_ONLY_WINDOW_MS), Ok(()));
+
+    let mut callers = DialOnlyCallers::default();
+    for n in 0..DIAL_ONLY_CALLERS {
+        let mut id = [0; 32];
+        id[..8].copy_from_slice(&(n as u64).to_le_bytes());
+        callers.admit(id, 0).unwrap();
+    }
+    // Every slot is inside its window: a fresh key buys no new budget.
+    assert_eq!(callers.admit([0xff; 32], 1), Err(Error::RateLimited));
+    // Once the windows lapse, their slots are reclaimed.
+    assert_eq!(callers.admit([0xff; 32], DIAL_ONLY_WINDOW_MS), Ok(()));
 }
