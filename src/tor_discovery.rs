@@ -113,6 +113,26 @@ pub struct TorDiscoveryConfig<I, V> {
     /// Explicit original envelope freshness limits.
     pub envelope_window: TimeWindow,
 }
+/// Construction inputs of a dial-only client: no listener and no own advertisement.
+/// Its questions carry no sender PeerInfo, so no peer ever routes or advertises it.
+pub struct TorDialConfig<I, V> {
+    /// Complete-message port on the actual running (client-only) Tor node.
+    pub messages: Arc<ctrn::messages::Messages>,
+    /// Scoped node signing owner (for example an ephemeral bootstrap key).
+    pub identity: I,
+    /// Maintained strict VLD0 verifier.
+    pub verifier: V,
+    /// Operator bootstrap hints, independently signed by each advertised node.
+    pub bootstrap: Vec<UnverifiedPeerInfoBytes>,
+    /// The same node's monotonic runtime clock.
+    pub clock: Arc<dyn ctrn::Clock>,
+    /// Caller-selected work bounds.
+    pub limits: TorDiscoveryLimits,
+    /// Actual runtime wall clock; request payloads never set acceptance time.
+    pub envelope_time: Arc<dyn TorEnvelopeTime>,
+    /// Explicit original envelope freshness limits.
+    pub envelope_window: TimeWindow,
+}
 #[derive(Clone)]
 struct Peer {
     info: Arc<VerifiedExtensionPeer>,
@@ -155,7 +175,8 @@ pub struct TorDiscovery<I, V> {
     messages: Arc<ctrn::messages::Messages>,
     identity: I,
     verifier: V,
-    own: Peer,
+    /// None for a dial-only client: it has no listener and advertises nothing.
+    own: Option<Peer>,
     clock: Arc<dyn ctrn::Clock>,
     limits: TorDiscoveryLimits,
     routes: Mutex<BTreeMap<NodeId, Peer>>,
@@ -181,17 +202,48 @@ impl<I: TorNodeIdentity, V: Verifier> TorDiscovery<I, V> {
             envelope_time,
             envelope_window,
         } = config;
-        if limits.timeout_ms == 0
-            || limits.lanes.get() > limits.peers.get()
-            || bootstrap.len() > limits.peers.get()
-        {
-            return Err(Error::Encoding);
-        }
         let own = peer(own.verify_extension(&verifier)?)?;
         if own.info.node_id() != &identity.node_id()
             || own.endpoint.bytes() != listener.address().bytes()
         {
             return Err(Error::WrongRecord);
+        }
+        Self::build(
+            TorDialConfig {
+                messages,
+                identity,
+                verifier,
+                bootstrap,
+                clock,
+                limits,
+                envelope_time,
+                envelope_window,
+            },
+            Some(own),
+        )
+    }
+    /// A dial-only client: it needs no listener, publishes no advertisement and sends
+    /// no sender PeerInfo, so it can look up, read and write records but is never a
+    /// routing peer, never answers, and never holds a watch (nothing could deliver it).
+    pub fn dial_only(config: TorDialConfig<I, V>) -> Result<Self, Error> {
+        Self::build(config, None)
+    }
+    fn build(config: TorDialConfig<I, V>, own: Option<Peer>) -> Result<Self, Error> {
+        let TorDialConfig {
+            messages,
+            identity,
+            verifier,
+            bootstrap,
+            clock,
+            limits,
+            envelope_time,
+            envelope_window,
+        } = config;
+        if limits.timeout_ms == 0
+            || limits.lanes.get() > limits.peers.get()
+            || bootstrap.len() > limits.peers.get()
+        {
+            return Err(Error::Encoding);
         }
         let this = Self {
             messages,
@@ -208,6 +260,13 @@ impl<I: TorNodeIdentity, V: Verifier> TorDiscovery<I, V> {
             this.observe(peer(info.verify_extension(&this.verifier)?)?)?;
         }
         Ok(this)
+    }
+    /// True for a [`Self::dial_only`] client.
+    pub fn is_dial_only(&self) -> bool {
+        self.own.is_none()
+    }
+    fn serving(&self) -> Result<&Peer, Error> {
+        self.own.as_ref().ok_or(Error::Unavailable)
     }
     fn observe(&self, peer: Peer) -> Result<(), Error> {
         let id = *peer.info.node_id();
@@ -239,7 +298,7 @@ impl<I: TorNodeIdentity, V: Verifier> TorDiscovery<I, V> {
         to: Arc<VerifiedExtensionPeer>,
         target: NodeId,
     ) -> Result<Vec<Peer>, Error> {
-        let question = find_node(&target, &[DHTV])?.with_sender(self.own.info.original())?;
+        let question = self.with_sender(find_node(&target, &[DHTV])?)?;
         let signed = self.identity.question(&question, to.node_id()).await?;
         if signed.operation() != question.as_bytes() || signed.signer() != &self.identity.node_id()
         {
@@ -316,8 +375,8 @@ impl<I: TorNodeIdentity, V: Verifier> TorDiscovery<I, V> {
     pub(crate) fn sleep_until(&self, deadline_ms: u64) -> crate::BoxFuture<'_, ()> {
         self.clock.sleep_until(deadline_ms)
     }
-    pub(crate) fn endpoint(&self) -> &ctrn::Address {
-        &self.own.endpoint
+    pub(crate) fn endpoint(&self) -> Result<&ctrn::Address, Error> {
+        Ok(&self.serving()?.endpoint)
     }
     pub(crate) fn node_for_endpoint(&self, endpoint: &[u8]) -> Result<NodeId, Error> {
         let routes = self.routes.lock().map_err(|_| Error::Unavailable)?;
@@ -331,7 +390,9 @@ impl<I: TorNodeIdentity, V: Verifier> TorDiscovery<I, V> {
         Ok(node)
     }
     pub(crate) fn stores_records(&self) -> bool {
-        self.own.info.advertisement().capabilities.contains(&DHTV)
+        self.own
+            .as_ref()
+            .is_some_and(|own| own.info.advertisement().capabilities.contains(&DHTV))
     }
     pub(crate) fn mark_responsive(&self, node: &NodeId, responsive: bool) -> Result<(), Error> {
         if let Some(peer) = self
@@ -406,12 +467,17 @@ impl<I: TorNodeIdentity, V: Verifier> TorDiscovery<I, V> {
         result
     }
     pub(crate) fn with_sender(&self, question: Question) -> Result<Question, Error> {
-        question.with_sender(self.own.info.original())
+        match &self.own {
+            Some(own) => question.with_sender(own.info.original()),
+            // A dial-only client sends no sender PeerInfo: nothing to route or advertise.
+            None => Ok(question),
+        }
     }
     pub(crate) async fn authenticate(
         &self,
         bytes: Vec<u8>,
     ) -> Result<AuthenticatedOperation, Error> {
+        self.serving()?;
         let envelope = Envelope::verify(
             bytes,
             &self.node_id(),
@@ -425,10 +491,16 @@ impl<I: TorNodeIdentity, V: Verifier> TorDiscovery<I, V> {
         }
         Ok(received)
     }
-    pub(crate) fn observe_sender(&self, received: &AuthenticatedOperation) -> Result<(), Error> {
-        let sender = peer(received.sender_peer(&self.verifier)?)?;
-        self.observe(sender)?;
-        self.mark_responsive(received.sender(), true)
+    /// Route an authenticated sender by its own PeerInfo. A sender without PeerInfo is a
+    /// dial-only client: it is answered on its call but never routed, so it is never
+    /// handed to other peers. Returns whether the sender is routable.
+    pub(crate) fn observe_sender(&self, received: &AuthenticatedOperation) -> Result<bool, Error> {
+        let Some(sender) = received.sender_peer_optional(&self.verifier)? else {
+            return Ok(false);
+        };
+        self.observe(peer(sender)?)?;
+        self.mark_responsive(received.sender(), true)?;
+        Ok(true)
     }
     pub(crate) async fn call_watch<W: TorWatcher>(
         &self,
@@ -556,6 +628,7 @@ impl<I: TorNodeIdentity, V: Verifier> TorDiscovery<I, V> {
     /// may introduce its self-signed endpoint. Returned peers remain original bytes.
     /// The caller sends this result through the received one-use Tor reply port.
     pub async fn answer_find(&self, request: Vec<u8>) -> Result<Vec<u8>, Error> {
+        self.serving()?;
         let envelope = Envelope::verify(
             request,
             &self.identity.node_id(),
@@ -578,18 +651,17 @@ impl<I: TorNodeIdentity, V: Verifier> TorDiscovery<I, V> {
         if received.operation().signer() != received.sender() {
             return Err(Error::BadSignature);
         }
+        let own = self.serving()?.info.clone();
         let request = received.operation();
-        let sender = peer(received.sender_peer(&self.verifier)?)?;
         let (_, target, caps) = find_query(request)?;
-        self.observe(sender)?;
-        self.mark_responsive(received.sender(), true)?;
+        self.observe_sender(received)?;
         let mut peers: Vec<_> = self
             .routes
             .lock()
             .map_err(|_| Error::Unavailable)?
             .values()
             .map(|p| p.info.clone())
-            .chain(std::iter::once(self.own.info.clone()))
+            .chain(std::iter::once(own))
             .filter(|p| {
                 caps.iter()
                     .all(|cap| p.advertisement().capabilities.contains(cap))
@@ -619,3 +691,7 @@ impl<I: TorNodeIdentity, V: Verifier> TorDiscovery<I, V> {
             .await
     }
 }
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+#[path = "../tests/support/dial_only_unit.rs"]
+mod dial_only_unit;

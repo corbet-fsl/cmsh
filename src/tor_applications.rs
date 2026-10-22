@@ -60,7 +60,7 @@ impl<I: TorNodeIdentity + 'static, V: Verifier + crate::MaybeSend + crate::Maybe
         if maximum.get() > 32 * 1024 || capacity.get() > 1024 {
             return Err(Error::ValueTooLarge);
         }
-        let address = Address::new(scheme(), discovery.endpoint().bytes().to_vec())
+        let address = Address::new(scheme(), discovery.endpoint()?.bytes().to_vec())
             .map_err(|_| Error::Encoding)?;
         // futures mpsc gives this single retained sender one additional slot.
         // Never clone it: capacity is the complete queue bound, including that slot.

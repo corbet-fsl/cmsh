@@ -159,6 +159,10 @@ impl<I: TorNodeIdentity, V: Verifier, W: TorWatcher> TorRecords<I, V, W> {
         V: crate::MaybeSend + crate::MaybeSync + 'static,
         I: 'static,
     {
+        // A dial-only client serves nothing; it never runs a listener.
+        if self.discovery.is_dial_only() {
+            return Err(Error::Unavailable);
+        }
         let _lease = ListenerLease(&self.watches);
         // MessageListener::next may already own an accepted partial connection.
         // Unfold retains that in-flight future across timer/completion selection;
@@ -306,7 +310,7 @@ impl<I: TorNodeIdentity, V: Verifier, W: TorWatcher> TorRecords<I, V, W> {
         &self,
         received: AuthenticatedOperation,
     ) -> Result<Vec<u8>, Error> {
-        self.discovery.observe_sender(&received)?;
+        let routable = self.discovery.observe_sender(&received)?;
         if cdht::rpc::peers::find_query(received.operation()).is_ok() {
             return self.discovery.answer_find_authenticated(&received).await;
         }
@@ -345,6 +349,10 @@ impl<I: TorNodeIdentity, V: Verifier, W: TorWatcher> TorRecords<I, V, W> {
             && received.operation().signer() != received.sender()
         {
             return Err(Error::BadSignature);
+        }
+        // A dial-only client has no listener: a ValueChanged for it could never arrive.
+        if matches!(request, Query::Watch { .. }) && !routable {
+            return Err(Error::WatchRefused);
         }
         let key = match &request {
             Query::Get { key, .. } | Query::Set { key, .. } | Query::Watch { key, .. } => key,
@@ -697,6 +705,10 @@ impl<I: TorNodeIdentity, V: Verifier, W: TorWatcher> Network for TorRecords<I, V
         }
     }
     async fn watch(&self, node: &NodeId, key: &RecordKey) -> Result<WatchId, Error> {
+        // No listener: a dial-only client could never receive the ValueChanged.
+        if self.discovery.is_dial_only() {
+            return Err(Error::WatchRefused);
+        }
         {
             let watches = self.watches.lock().map_err(|_| Error::Unavailable)?;
             if watches.len() >= self.limits.watches.get() {
