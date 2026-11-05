@@ -21,22 +21,28 @@ cache = false
 commands = [["ccid", "tor", "v01-tor-live"]]
 
 [render]
-tool_revision = "7cfd84a1c845890d02769801e405a16a152a3a11"
-
+tool_revision = "bd9aff07073185fb0a3503bab331aedefb6d8fd2"
+tool_sha256 = "38c0eadf2a2adb406f83c7d4892bc01a0a10b95671e1e671358e43a257bb5d23"
 [jobs.verify]
-scheduler = "crow"
+scheduler = "forgejo"
+runs_on = "heavy"
 checks = ["verify"]
-workflow = "repository-jobs"
+workflow = "ci"
 command = ["bash", ".ci/run-cached.sh"]
+events = ["manual"]
 
 [jobs.records]
-scheduler = "crow"
+scheduler = "forgejo"
+runs_on = "heavy"
 checks = ["records"]
-workflow = "tor-records"
+workflow = "records"
 command = ["bash", ".ci/run-cached.sh"]
+events = ["manual"]
 
 [jobs.v01-tor-live]
-scheduler = "crow"
+scheduler = "forgejo"
+runs_on = "heavy"
 checks = ["v01-tor-live"]
 workflow = "v01-tor-live"
 command = ["bash", ".ci/run-cached.sh"]
+events = ["manual"]

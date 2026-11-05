@@ -1,24 +1,28 @@
 {
   "schema": 1,
   "generator": "ccid render v1",
-  "tool_revision": "7cfd84a1c845890d02769801e405a16a152a3a11",
-  "manifest_sha256": "a94266a43d9c87e6c687b6cca9a6997f9f57255accb70de954420644a66b5d19",
+  "tool_revision": "bd9aff07073185fb0a3503bab331aedefb6d8fd2",
+  "manifest_sha256": "64355e9d709ae5c8f581b4b62e8d9684efe61295fa28c55ad1c595bcca798266",
   "jobs": {
     "records": {
       "job": "records",
-      "scheduler": "crow",
+      "scheduler": "forgejo",
       "checks": [
         "records"
       ],
-      "workflow": "tor-records",
+      "workflow": "records",
       "command": [
         "bash",
         ".ci/run-cached.sh"
+      ],
+      "runs_on": "heavy",
+      "events": [
+        "manual"
       ]
     },
     "v01-tor-live": {
       "job": "v01-tor-live",
-      "scheduler": "crow",
+      "scheduler": "forgejo",
       "checks": [
         "v01-tor-live"
       ],
@@ -26,18 +30,26 @@
       "command": [
         "bash",
         ".ci/run-cached.sh"
+      ],
+      "runs_on": "heavy",
+      "events": [
+        "manual"
       ]
     },
     "verify": {
       "job": "verify",
-      "scheduler": "crow",
+      "scheduler": "forgejo",
       "checks": [
         "verify"
       ],
-      "workflow": "repository-jobs",
+      "workflow": "ci",
       "command": [
         "bash",
         ".ci/run-cached.sh"
+      ],
+      "runs_on": "heavy",
+      "events": [
+        "manual"
       ]
     }
   }
