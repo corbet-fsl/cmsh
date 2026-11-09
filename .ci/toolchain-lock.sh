@@ -30,7 +30,7 @@
 #   TOOLCHAIN_LOCK_TIMEOUT   flock wait seconds (default 2700, mirrors CI_TIMEOUT)
 #   TOOLCHAIN_WANT_NIGHTLY   1/0 (default 1)
 #   TOOLCHAIN_WASM_TARGETS   space-separated "toolchain:target" pairs (default empty)
-#   CARGO_HOME, shared_cargo_home (as today), PATH with proto/rustup shims.
+#   CARGO_HOME (the runner's shared home, never a private one), PATH with proto/rustup shims.
 # Provides: toolchain_ensure (returns holding SHARED on fd 8),
 #           toolchain_release, toolchain_ready, repo_install_exact.
 # NOTE: no test doubles in this file. Tests stub rustup/proto/cargo on PATH.
@@ -45,7 +45,7 @@ _TOOLCHAIN_MAX_ROUNDS="${_TOOLCHAIN_MAX_ROUNDS:-3}"
 TOOLCHAIN_WANT_NIGHTLY="${TOOLCHAIN_WANT_NIGHTLY:-1}"
 TOOLCHAIN_WASM_TARGETS="${TOOLCHAIN_WASM_TARGETS:-}"
 
-_tc_rustup() { "$CARGO_HOME/bin/rustup" "$@"; }
+_tc_rustup() { rustup "$@"; }
 
 # rustup refuses installs/updates when $HOME differs from the euid home.
 # Run each install/update with HOME set to the euid home for that command
@@ -107,18 +107,6 @@ tc_target_ready() { # <toolchain> <target>
   return 0
 }
 
-# Registry link state is "ready" unless a linkable source exists and the link
-# is missing (that creation requires exclusive).
-tc_registry_ready() {
-  if [[ -e $CARGO_HOME/registry ]]; then
-    return 0
-  fi
-  if [[ -n ${shared_cargo_home:-} && -d $shared_cargo_home/registry ]]; then
-    return 1
-  fi
-  return 0
-}
-
 toolchain_ready() {
   tc_stable_ready || return 1
   if [[ $TOOLCHAIN_WANT_NIGHTLY == 1 ]]; then
@@ -130,7 +118,6 @@ toolchain_ready() {
     tgt=${pair#*:}
     tc_target_ready "$tc" "$tgt" || return 1
   done
-  tc_registry_ready || return 1
   return 0
 }
 
@@ -140,9 +127,6 @@ toolchain_ready() {
 toolchain_install() {
   local stable_comps
   mkdir -p "$CARGO_HOME" || return 1
-  if [[ ! -e $CARGO_HOME/registry && -n ${shared_cargo_home:-} && -d $shared_cargo_home/registry ]]; then
-    ln -s "$shared_cargo_home/registry" "$CARGO_HOME/registry" || return 1
-  fi
   # Repeated `proto install rust stable` can replace an installed toolchain.
   # Reuse a working provisioned stable compiler; explicit upgrades are separate.
   # Component adds run UNCONDITIONALLY after (not in an else): a fresh proto
@@ -153,21 +137,21 @@ toolchain_install() {
   fi
   stable_comps=$(_tc_rustup component list --toolchain stable --installed 2>/dev/null) || return 1
   if ! grep -q '^rustfmt' <<<"$stable_comps"; then
-    _tc_run_install "$CARGO_HOME/bin/rustup" component add rustfmt --toolchain stable || return 1
+    _tc_run_install rustup component add rustfmt --toolchain stable || return 1
   fi
   if ! grep -q '^clippy' <<<"$stable_comps"; then
-    _tc_run_install "$CARGO_HOME/bin/rustup" component add clippy --toolchain stable || return 1
+    _tc_run_install rustup component add clippy --toolchain stable || return 1
   fi
   if [[ $TOOLCHAIN_WANT_NIGHTLY == 1 ]]; then
     if ! _tc_rustup run nightly rustc --version >/dev/null 2>&1; then
-      _tc_run_install "$CARGO_HOME/bin/rustup" toolchain install nightly --component llvm-tools-preview || return 1
+      _tc_run_install rustup toolchain install nightly --component llvm-tools-preview || return 1
     else
       local comps
       comps=$(_tc_rustup component list --toolchain nightly --installed 2>/dev/null) || return 1
       if ! _tc_has_llvm_tools "$comps"; then
         # Alias accepted by rustup; installs the component list reports as
         # llvm-tools-<target> on current toolchains.
-        _tc_run_install "$CARGO_HOME/bin/rustup" component add llvm-tools-preview --toolchain nightly || return 1
+        _tc_run_install rustup component add llvm-tools-preview --toolchain nightly || return 1
       fi
     fi
   fi
@@ -177,7 +161,7 @@ toolchain_install() {
     tgt=${pair#*:}
     tgts=$(_tc_rustup target list --toolchain "$tc" --installed 2>/dev/null) || return 1
     if ! grep -q "^$tgt" <<<"$tgts"; then
-      _tc_run_install "$CARGO_HOME/bin/rustup" target add "$tgt" --toolchain "$tc" || return 1
+      _tc_run_install rustup target add "$tgt" --toolchain "$tc" || return 1
     fi
   done
   return 0
