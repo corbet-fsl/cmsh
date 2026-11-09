@@ -18,7 +18,7 @@ Land: `cargo fmt` in touched repos, rebase on main (never force-push),
 Invariants (rule -> enforcing test):
 - Fallback is explicit and never replays a failed call onto another
   network; no silent downgrade, direct fallback or false delivery ACK
-  -> `tests/contracts.rs::fallback_is_explicit_and_never_replays_a_failed_call`
+  -> `tests/it/contracts.rs::fallback_is_explicit_and_never_replays_a_failed_call`
 - Mandatory anonymity and declared capabilities fail closed
   -> `::mandatory_anonymity_and_declared_capabilities_fail_closed`
 - Payload bounds checked before I/O and on received messages, calls and
@@ -32,7 +32,7 @@ Invariants (rule -> enforcing test):
   -> `error::tests::adapter_errors_keep_only_coarse_static_context`
 - Tor adapter moves bounded messages with one-use replies over real
   Node/Ferry byte I/O (needs `--features tor`)
-  -> `tests/tor_port.rs::mesh_tor_port_uses_bounded_messages_and_original_one_use_reply`
+  -> `tests/it/tor_port.rs::mesh_tor_port_uses_bounded_messages_and_original_one_use_reply`
 
 Pointers: `src/mesh.rs`, `src/port.rs`, `src/address.rs`, `docs/CONTRACT.md`.
 Commits: explicit paths, imperative, author per `~/agents/AGENT.md`; no AI trailers.

@@ -33,7 +33,7 @@ mkdir -p "$RUNNER_TEMP/wasm-runner"
 )
 export PATH="$RUNNER_TEMP/wasm-runner:$PATH"
 
-CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner cargo test --locked --all-features --target wasm32-unknown-unknown --test contracts --test tor_port
+CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner cargo test --locked --all-features --target wasm32-unknown-unknown --test it
 
 python3 .github/check-first-party.py
 
