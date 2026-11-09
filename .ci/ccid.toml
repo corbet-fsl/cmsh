@@ -45,3 +45,5 @@ checks = ["v01-tor-live"]
 workflow = "v01-tor-live"
 command = ["bash", ".ci/run-cached.sh"]
 events = ["manual"]
+
+[check_shell]
