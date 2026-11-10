@@ -16,6 +16,14 @@
 # shell names every runtime library directory there itself, and it adds no
 # `-rpath $out/lib`: a shell has no $out, that store path never exists.
 #
+# Relinking: Cargo's freshness check never reads NIX_LDFLAGS, so a changed
+# shell would leave every binary in an existing target directory linked
+# against the previous shell. The same directory list therefore also reaches
+# Cargo as host-target rustflags (`-rpath-link`: link-time search only, the
+# RUNPATH stays as NIX_LDFLAGS writes it). Cargo fingerprints rustflags, so a
+# changed library set relinks a persistent target. A job that sets RUSTFLAGS
+# replaces target rustflags (Cargo's precedence) and loses this.
+#
 # gcc is the native driver on purpose (measured 2026-11-09): kache's
 # host_crt probe asks the driver for `libc.a`; a clang driver answers with the
 # HOST /usr/lib/libc.a on Arch and with nothing inside a NixOS runner (13 CRT
@@ -71,6 +79,8 @@ let
     LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
     NIX_LDFLAGS = lib.concatMapStringsSep " " (dir: "-rpath ${dir}") rpathDirs;
     NIX_NO_SELF_RPATH = true;
+    "CARGO_TARGET_${pkgs.stdenv.hostPlatform.rust.cargoEnvVarTarget}_RUSTFLAGS" =
+      lib.concatMapStringsSep " " (dir: "-C link-arg=-Wl,-rpath-link,${dir}") rpathDirs;
     shellHook = ''
       export CC=gcc CXX=g++ AR=ar NM=nm RANLIB=ranlib
       export CC_wasm32_unknown_unknown=clang
