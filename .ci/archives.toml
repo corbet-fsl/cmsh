@@ -6,7 +6,7 @@ schema = 1
 # ctrn tor-tools.sh predates the Crow branch (unconditional `sudo apt-get`).
 # Product pins are unchanged and no shims are added.
 # Fetch into the dispatching checkout before dispatch:
-#   git fetch https://git.corbet.ch/corbet-foss/ctrn.git e74d3c8a1f421023bddc41f4b5ae86aaaea5978e
+#   git fetch https://git.corbet.ch/corbet-libre/ctrn.git e74d3c8a1f421023bddc41f4b5ae86aaaea5978e
 [archives.ctrn-tooling]
 revision = "e74d3c8a1f421023bddc41f4b5ae86aaaea5978e"
 archive_variable = "CTRN_TOOLING_SOURCE_ARCHIVE"

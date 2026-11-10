@@ -67,12 +67,14 @@ ctrn
 cvch
 cvfy
 cvld
+cvld-client
 cvlk
 cvln
 cvlt
 cvtl
 cwlt
 cwlt-engine
+cwlt-wasm
 cwst
 cwvs
 cxch
