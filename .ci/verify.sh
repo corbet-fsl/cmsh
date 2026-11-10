@@ -10,7 +10,6 @@ export GITHUB_ENV="${GITHUB_ENV:-$RUNNER_TEMP/github_env.txt}"
 touch "$GITHUB_PATH" "$GITHUB_ENV"
 
 rustc --version
-bash .ci/update-our-crates.sh
 cargo metadata --locked --format-version 1 > dependency-metadata.json
 python3 .github/check-first-party.py
 cargo fmt --all --check
