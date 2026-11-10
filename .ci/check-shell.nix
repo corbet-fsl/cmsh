@@ -3,9 +3,18 @@
 #
 # One NATIVE C/C++ toolchain family (nix gcc 15.3), one nixpkgs pin, and the
 # native libraries the build scripts discover through pkg-config. The
-# toolchain, pkg-config, PKG_CONFIG_PATH, NIX_CFLAGS_COMPILE/NIX_LDFLAGS and
-# LD_LIBRARY_PATH come from this one shell, together; nothing here mixes with
-# /usr/lib, so a lane and CI build linked units with the same inputs.
+# toolchain, pkg-config, PKG_CONFIG_PATH, NIX_CFLAGS_COMPILE/NIX_LDFLAGS, the
+# RUNPATH of everything linked here and LD_LIBRARY_PATH come from this one
+# shell, together; nothing here mixes with /usr/lib, so a lane and CI build
+# linked units with the same inputs.
+#
+# RUNPATH: a binary linked here runs without LD_LIBRARY_PATH (env -i, or a
+# child started with a cleared environment). The nix ld wrapper would add an
+# rpath for each library it links, but a Rust link here runs rustc's bundled
+# rust-lld or a link driver's own Wild/mold, and neither passes through that
+# wrapper. The cc wrapper hands NIX_LDFLAGS to whichever linker runs, so the
+# shell names every runtime library directory there itself, and it adds no
+# `-rpath $out/lib`: a shell has no $out, that store path never exists.
 #
 # gcc is the native driver on purpose (measured 2026-11-09): kache's
 # host_crt probe asks the driver for `libc.a`; a clang driver answers with the
@@ -26,6 +35,11 @@ let
   inherit (pkgs) lib;
   nativeLibs = with pkgs; [ openssl xz zlib zstd sqlite libevent dbus ];
   runtimeLibs = nativeLibs ++ [ pkgs.llvmPackages.libclang.lib pkgs.llvmPackages.libcxx ];
+  # Every directory a binary linked here may load a library from: the runtime
+  # libraries above (libc++ and libc++abi included) and gcc's own runtime
+  # (libstdc++, libgcc_s, libatomic). glibc is the binary's interpreter, which
+  # finds its own libraries.
+  rpathDirs = lib.unique (map (p: "${lib.getLib p}/lib") (runtimeLibs ++ [ pkgs.stdenv.cc.cc ]));
   python = pkgs.python3.withPackages (ps: [ ps.selenium ]);
   # Barretenberg is a per-repository content input: only a repository that
   # commits .ci/native-sdk.json gets the reviewed static artifact and its env.
@@ -55,6 +69,8 @@ let
       python
     ];
     LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+    NIX_LDFLAGS = lib.concatMapStringsSep " " (dir: "-rpath ${dir}") rpathDirs;
+    NIX_NO_SELF_RPATH = true;
     shellHook = ''
       export CC=gcc CXX=g++ AR=ar NM=nm RANLIB=ranlib
       export CC_wasm32_unknown_unknown=clang
