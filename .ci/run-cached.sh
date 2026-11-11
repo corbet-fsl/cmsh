@@ -36,13 +36,6 @@ export PATH="$(dirname "$CCID_BIN"):$PROTO_HOME/shims:$PROTO_HOME/bin:$PATH"
 export CI_JOBS="${CI_JOBS:-2}" CARGO_BUILD_JOBS="${CI_JOBS:-2}"
 export RUST_TEST_THREADS="${CI_TEST_THREADS:-2}"
 export CARGO_NET_GIT_FETCH_WITH_CLI=true
-# Append to any git config the verified runtime already supplies through the environment.
-git_config_base=${GIT_CONFIG_COUNT:-0}
-export GIT_CONFIG_COUNT=$((git_config_base + 2))
-export "GIT_CONFIG_KEY_$((git_config_base + 0))=url.https://git.corbet.ch/corbet-libs/.insteadOf"
-export "GIT_CONFIG_VALUE_$((git_config_base + 0))=https://github.com/corbet-libs/"
-export "GIT_CONFIG_KEY_$((git_config_base + 1))=url.https://git.corbet.ch/corbet-foss/.insteadOf"
-export "GIT_CONFIG_VALUE_$((git_config_base + 1))=https://github.com/corbet-foss/"
 # Mirror the CI actions/cache entry for the fixture-owned Tor tool cache in
 # persistent job state (best effort; a miss only rebuilds ephemerally).
 if [ -n "${HOME:-}" ]; then
