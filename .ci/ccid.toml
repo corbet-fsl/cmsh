@@ -24,7 +24,7 @@ commands = [["ccid", "tor", "v01-tor-live"]]
 render_schema = 2
 [jobs.verify]
 scheduler = "forgejo"
-runs_on = "heavy"
+runs_on = "linux"
 checks = ["verify"]
 workflow = "ci"
 command = ["bash", ".ci/run-cached.sh"]
@@ -32,7 +32,7 @@ events = ["manual"]
 
 [jobs.records]
 scheduler = "forgejo"
-runs_on = "heavy"
+runs_on = "linux"
 checks = ["records"]
 workflow = "records"
 command = ["bash", ".ci/run-cached.sh"]
@@ -40,7 +40,7 @@ events = ["manual"]
 
 [jobs.v01-tor-live]
 scheduler = "forgejo"
-runs_on = "heavy"
+runs_on = "linux"
 checks = ["v01-tor-live"]
 workflow = "v01-tor-live"
 command = ["bash", ".ci/run-cached.sh"]
