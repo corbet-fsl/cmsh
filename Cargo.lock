@@ -619,7 +619,7 @@ dependencies = [
 [[package]]
 name = "cdht"
 version = "0.0.0"
-source = "git+https://git.corbet.ch/corbet-libre/cdht.git?branch=main#505125356b23976763ef5f10f0380a464ad021a9"
+source = "git+https://git.corbet.ch/corbet-libre/cdht.git?branch=main#76d78fb067a4b5318bf9c6228a29a45bb071ec1a"
 dependencies = [
  "blake3",
  "capnp",
@@ -636,7 +636,7 @@ dependencies = [
 [[package]]
 name = "cfbk"
 version = "0.0.0"
-source = "git+https://git.corbet.ch/corbet-libre/cfbk.git?branch=main#a0f483eada9a5cfe9ed2d23e117f4665bc1323c2"
+source = "git+https://git.corbet.ch/corbet-libre/cfbk.git?branch=main#9b35e9eabe345efb6b5ff05f7e1ec057073427ed"
 
 [[package]]
 name = "cfg-if"
@@ -653,7 +653,7 @@ checksum = "f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527"
 [[package]]
 name = "cfry"
 version = "0.1.0"
-source = "git+https://git.corbet.ch/corbet-libre/cfry.git?branch=main#c90525ed40982b7fa65ab627f79c9dec66937f27"
+source = "git+https://git.corbet.ch/corbet-libre/cfry.git?branch=main#70bba882a9c3aaa4c8be3a7f02ed27a4996834ca"
 dependencies = [
  "bytes",
  "futures",
@@ -1007,7 +1007,7 @@ dependencies = [
 [[package]]
 name = "ctrn"
 version = "0.1.0"
-source = "git+https://git.corbet.ch/corbet-libre/ctrn.git?branch=main#afa3908c9653235ac7f156813056f22a8741ca30"
+source = "git+https://git.corbet.ch/corbet-libre/ctrn.git?branch=main#0466cd13b2bf2e2ebc89e9877d1aff90a5ae65cd"
 dependencies = [
  "arti-client",
  "async-trait",
@@ -1093,7 +1093,7 @@ dependencies = [
 [[package]]
 name = "cvln"
 version = "0.0.0"
-source = "git+https://git.corbet.ch/corbet-libre/cvln.git?branch=main#0bb3912c71f7ab8bb46145bdaac7e67abf891ef4"
+source = "git+https://git.corbet.ch/corbet-libre/cvln.git?branch=main#2fbf97229c452daac82a5421987c283ed7e58078"
 dependencies = [
  "flume",
  "parking_lot",
