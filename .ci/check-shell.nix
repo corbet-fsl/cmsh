@@ -62,7 +62,7 @@ let
     mkdir -p "$out/lib"
     tar -xzf ${bbSource} -C "$out/lib" libbb-external.a
   '' else null;
-  base = pkgs.mkShell {
+  shell = pkgs.mkShell ({
     nativeBuildInputs = with pkgs; [
       pkg-config
       cmake
@@ -87,8 +87,10 @@ let
       # Exact: the native libraries come from this shell, never from the host.
       export LD_LIBRARY_PATH="${lib.makeLibraryPath runtimeLibs}"
     '';
-  };
-in base // lib.optionalAttrs hasSdk {
-  BB_LIB_DIR = "${bbLibrary}/lib";
-  BB_NATIVE_RUSTFLAGS = "-C link-arg=-Wl,-rpath,${lib.makeLibraryPath [ pkgs.llvmPackages.libcxx ]}";
-}
+    # Environment variables are mkShell attributes: merged onto the finished
+    # derivation (`//` after mkShell) they would never reach the environment.
+  } // lib.optionalAttrs hasSdk {
+    BB_LIB_DIR = "${bbLibrary}/lib";
+    BB_NATIVE_RUSTFLAGS = "-C link-arg=-Wl,-rpath,${lib.makeLibraryPath [ pkgs.llvmPackages.libcxx ]}";
+  });
+in shell
