@@ -47,3 +47,6 @@ command = ["bash", ".ci/run-cached.sh"]
 events = ["manual"]
 
 [check_shell]
+
+[security]
+dependencies = "cargo-deny"
